@@ -46,6 +46,15 @@ pacman -S sshs
 apk add sshs
 ```
 
+### Debian / Ubuntu
+
+Download the `.deb` file for your architecture, then install it. Replace `amd64` with `arm64` on ARM machines.
+
+```shell
+curl -LO https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-amd64.deb
+sudo apt install ./sshs-linux-amd64.deb
+```
+
 ### NetBSD
 
 `sshs` is available on NetBSD from the [official repository](https://pkgsrc.se/security/sshs).
