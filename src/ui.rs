@@ -20,7 +20,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{searchable::Searchable, ssh};
 
-const INFO_TEXT: &str = "(Esc) quit | (↑) move up | (↓) move down | (enter) select | (ctrl+r) reload";
+const INFO_TEXT: &str =
+    "(Esc) quit | (↑) move up | (↓) move down | (enter) select | (ctrl+r) reload";
 
 #[derive(Clone)]
 #[allow(clippy::struct_excessive_bools)]

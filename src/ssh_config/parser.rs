@@ -310,7 +310,10 @@ mod tests {
     #[test]
     fn test_include_file_parsing() {
         let included_path = testdata("include/included.conf");
-        let config = format!("Include {}\nHost main\n  Port 22\n", included_path.display());
+        let config = format!(
+            "Include {}\nHost main\n  Port 22\n",
+            included_path.display()
+        );
 
         let mut reader = std::io::BufReader::new(config.as_bytes());
         let parser = Parser::new();
