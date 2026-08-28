@@ -41,7 +41,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_sort: bool,
 
-    /// Fancy Levenshtein sort by edit distance
+    /// Sort search results by fuzzy match score, best match first
     #[arg(long, default_value_t = false)]
     sort_fancy: bool,
 
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
         config_paths: args.config,
         search_filter: args.search,
         sort_by_name: args.sort && !args.no_sort,
-        sort_by_levenshtein: args.sort_fancy,
+        sort_by_score: args.sort_fancy,
         show_proxy_command: args.show_proxy_command,
         command_template: args.template,
         command_template_on_session_start: args.on_session_start_template,

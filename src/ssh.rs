@@ -19,8 +19,8 @@ pub struct Host {
 }
 
 impl SearchableItem for Host {
-    fn search_text(&self) -> &str {
-        &self.name
+    fn search_texts(&self) -> Vec<&str> {
+        vec![&self.name, &self.aliases, &self.destination]
     }
 }
 

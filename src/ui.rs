@@ -8,7 +8,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 #[allow(clippy::wildcard_imports)]
 use ratatui::{prelude::*, widgets::*};
 use std::{
@@ -33,7 +32,7 @@ pub struct AppConfig {
 
     pub search_filter: Option<String>,
     pub sort_by_name: bool,
-    pub sort_by_levenshtein: bool,
+    pub sort_by_score: bool,
     pub show_proxy_command: bool,
 
     pub command_template: String,
@@ -97,7 +96,6 @@ impl App {
         }
 
         let search_input = config.search_filter.clone().unwrap_or_default();
-        let matcher = SkimMatcherV2::default();
 
         let mut app = App {
             config: config.clone(),
@@ -108,19 +106,7 @@ impl App {
             table_columns_constraints: Vec::new(),
             palette: tailwind::BLUE,
 
-            hosts: Searchable::new(
-                config.sort_by_levenshtein,
-                hosts,
-                &search_input,
-                move |host: &&ssh::Host, search_value: &str| -> bool {
-                    search_value.is_empty()
-                        || matcher.fuzzy_match(&host.name, search_value).is_some()
-                        || matcher
-                            .fuzzy_match(&host.destination, search_value)
-                            .is_some()
-                        || matcher.fuzzy_match(&host.aliases, search_value).is_some()
-                },
-            ),
+            hosts: Searchable::new(config.sort_by_score, hosts, &search_input),
         };
         app.calculate_table_columns_constraints();
 
@@ -553,7 +539,7 @@ mod tests {
                 .into_owned()],
             search_filter: None,
             sort_by_name: false,
-            sort_by_levenshtein: false,
+            sort_by_score: false,
             show_proxy_command: false,
             command_template: r#"ssh "{{{name}}}""#.to_string(),
             command_template_on_session_start: None,

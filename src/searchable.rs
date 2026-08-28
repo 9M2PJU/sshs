@@ -1,20 +1,17 @@
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 
-type SearchableFn<T> = dyn FnMut(&&T, &str) -> bool;
-
 pub trait SearchableItem {
-    fn search_text(&self) -> &str;
+    fn search_texts(&self) -> Vec<&str>;
 }
 
 pub struct Searchable<T>
 where
     T: Clone + SearchableItem,
 {
-    sort_by_levenshtein: bool,
+    sort_by_score: bool,
     vec: Vec<T>,
     matcher: SkimMatcherV2,
-    filter: Box<SearchableFn<T>>,
     filtered: Vec<T>,
 }
 
@@ -23,15 +20,11 @@ where
     T: Clone + SearchableItem,
 {
     #[must_use]
-    pub fn new<P>(sort_by_levenshtein: bool, vec: Vec<T>, search_value: &str, predicate: P) -> Self
-    where
-        P: FnMut(&&T, &str) -> bool + 'static,
-    {
+    pub fn new(sort_by_score: bool, vec: Vec<T>, search_value: &str) -> Self {
         let mut searchable = Self {
-            sort_by_levenshtein,
+            sort_by_score,
             vec,
             matcher: SkimMatcherV2::default(),
-            filter: Box::new(predicate),
             filtered: Vec::new(),
         };
         searchable.search(search_value);
@@ -47,15 +40,18 @@ where
         let mut items: Vec<_> = self
             .vec
             .iter()
-            .filter(|host| (self.filter)(host, value))
-            .map(|item| {
-                let score = self.matcher.fuzzy_match(item.search_text(), value).unwrap_or(0);
-                (item.clone(), score)
+            .filter_map(|item| {
+                let score = item
+                    .search_texts()
+                    .iter()
+                    .filter_map(|text| self.matcher.fuzzy_match(text, value))
+                    .max()?;
+
+                Some((item.clone(), score))
             })
             .collect();
 
-        // Sort by Levenshtein distance in descending order (higher score = better match)
-        if self.sort_by_levenshtein {
+        if self.sort_by_score {
             items.sort_by_key(|item| std::cmp::Reverse(item.1));
         }
 
@@ -101,5 +97,33 @@ where
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.filtered[index]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct Item(&'static str, &'static str);
+
+    impl SearchableItem for Item {
+        fn search_texts(&self) -> Vec<&str> {
+            vec![self.0, self.1]
+        }
+    }
+
+    #[test]
+    fn test_search_matches_every_text_of_an_item() {
+        let items = vec![
+            Item("alpha", "one.example.com"),
+            Item("beta", "two.example.com"),
+        ];
+        let mut searchable = Searchable::new(false, items, "");
+        assert_eq!(searchable.len(), 2);
+
+        searchable.search("two");
+        assert_eq!(searchable.len(), 1);
+        assert_eq!(searchable[0].0, "beta");
     }
 }
