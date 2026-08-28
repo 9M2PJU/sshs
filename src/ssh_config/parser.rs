@@ -70,8 +70,7 @@ impl Parser {
 
         let mut buf = String::new();
         while reader.read_line(&mut buf)? > 0 {
-            // We separate parts that contain comments with #
-            let line = buf.split('#').next().unwrap().trim().to_string();
+            let line = strip_comment(&buf).trim().to_string();
             buf.clear();
 
             if line.is_empty() {
@@ -179,6 +178,22 @@ impl Parser {
 
         Ok((parent_host, hosts))
     }
+}
+
+/// Strips a trailing comment, keeping any `#` inside double quotes,
+/// matching OpenSSH's tokenizer.
+fn strip_comment(line: &str) -> &str {
+    let mut in_double_quotes = false;
+
+    for (i, c) in line.char_indices() {
+        match c {
+            '"' => in_double_quotes = !in_double_quotes,
+            '#' if !in_double_quotes => return &line[..i],
+            _ => {}
+        }
+    }
+
+    line
 }
 
 fn parse_line(line: &str) -> Result<Entry, ParseError> {
@@ -372,6 +387,21 @@ mod tests {
             }
             other => panic!("expected InvalidInclude error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_hash_inside_quoted_value_is_kept() {
+        let config = "Host test\n  ProxyCommand \"connect # not a comment\" # real comment\n";
+        let mut reader = std::io::BufReader::new(config.as_bytes());
+
+        let parser = Parser::new();
+        let result = parser.parse(&mut reader).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].get(&EntryType::ProxyCommand).unwrap(),
+            "connect # not a comment"
+        );
     }
 
     #[test]
