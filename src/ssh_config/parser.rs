@@ -66,6 +66,7 @@ impl Parser {
     ) -> Result<(Host, Vec<Host>), ParseError> {
         let mut parent_host = Host::new(Vec::new());
         let mut hosts = Vec::new();
+        let mut in_match_block = false;
 
         let mut buf = String::new();
         while reader.read_line(&mut buf)? > 0 {
@@ -90,12 +91,22 @@ impl Parser {
                     }
                 }
                 EntryType::Host => {
+                    in_match_block = false;
+
                     let patterns = parse_patterns(&entry.1);
                     hosts.push(Host::new(patterns));
 
                     continue;
                 }
+                EntryType::Match => {
+                    in_match_block = true;
+                    continue;
+                }
                 EntryType::Include => {
+                    if in_match_block {
+                        continue;
+                    }
+
                     if depth >= MAX_INCLUDE_DEPTH {
                         return Err(InvalidIncludeError {
                             line,
@@ -153,6 +164,10 @@ impl Parser {
                     continue;
                 }
                 _ => {}
+            }
+
+            if in_match_block {
+                continue;
             }
 
             if hosts.is_empty() {
@@ -325,6 +340,18 @@ mod tests {
             result.unwrap_err(),
             ParseError::UnparseableLine(_)
         ));
+    }
+
+    #[test]
+    fn test_match_block_entries_do_not_leak_into_previous_host() {
+        let parser = Parser::new();
+        let result = parser.parse_file(testdata("match_block.conf")).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].get(&EntryType::User).unwrap(), "serveruser");
+        assert_eq!(result[0].get(&EntryType::Port), None);
+        assert_eq!(result[1].get(&EntryType::User), None);
+        assert_eq!(result[1].get(&EntryType::Port), None);
     }
 
     #[test]
