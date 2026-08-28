@@ -28,6 +28,7 @@ pub struct AppConfig {
     pub config_paths: Vec<String>,
 
     pub search_filter: Option<String>,
+    pub color: String,
     pub sort_by_name: bool,
     pub sort_by_score: bool,
     pub show_proxy_command: bool,
@@ -103,7 +104,7 @@ impl App {
             table_state: TableState::default().with_selected(0),
             table_columns_constraints: Vec::new(),
             page_step: 21,
-            palette: tailwind::BLUE,
+            palette: palette_by_name(&config.color)?,
 
             hosts: Searchable::new(config.sort_by_score, hosts, &search_input),
         };
@@ -393,6 +394,38 @@ impl App {
     }
 }
 
+fn palette_by_name(name: &str) -> Result<tailwind::Palette> {
+    let palette = match name.to_lowercase().as_str() {
+        "slate" => tailwind::SLATE,
+        "gray" => tailwind::GRAY,
+        "zinc" => tailwind::ZINC,
+        "neutral" => tailwind::NEUTRAL,
+        "stone" => tailwind::STONE,
+        "red" => tailwind::RED,
+        "orange" => tailwind::ORANGE,
+        "amber" => tailwind::AMBER,
+        "yellow" => tailwind::YELLOW,
+        "lime" => tailwind::LIME,
+        "green" => tailwind::GREEN,
+        "emerald" => tailwind::EMERALD,
+        "teal" => tailwind::TEAL,
+        "cyan" => tailwind::CYAN,
+        "sky" => tailwind::SKY,
+        "blue" => tailwind::BLUE,
+        "indigo" => tailwind::INDIGO,
+        "violet" => tailwind::VIOLET,
+        "purple" => tailwind::PURPLE,
+        "fuchsia" => tailwind::FUCHSIA,
+        "pink" => tailwind::PINK,
+        "rose" => tailwind::ROSE,
+        _ => anyhow::bail!(
+            "Unknown color: {name}\nValid colors: slate, gray, zinc, neutral, stone, red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink, rose"
+        ),
+    };
+
+    Ok(palette)
+}
+
 fn setup_terminal<B>(terminal: &Rc<RefCell<Terminal<B>>>) -> Result<()>
 where
     B: Backend + std::io::Write,
@@ -533,6 +566,7 @@ mod tests {
                 .to_string_lossy()
                 .into_owned()],
             search_filter: None,
+            color: "blue".to_string(),
             sort_by_name: false,
             sort_by_score: false,
             show_proxy_command: false,
