@@ -58,7 +58,7 @@ impl Host {
     }
 }
 
-/// Expands the `%h` and `%n` tokens that ssh_config allows in `HostName`,
+/// Expands the `%h` and `%n` tokens that `ssh_config` allows in `HostName`,
 /// both standing for the host name given on the command line.
 fn expand_hostname_tokens(hostname: &str, name: &str) -> String {
     let mut expanded = String::with_capacity(hostname.len());
@@ -72,12 +72,11 @@ fn expand_hostname_tokens(hostname: &str, name: &str) -> String {
 
         match chars.next() {
             Some('h' | 'n') => expanded.push_str(name),
-            Some('%') => expanded.push('%'),
+            Some('%') | None => expanded.push('%'),
             Some(other) => {
                 expanded.push('%');
                 expanded.push(other);
             }
-            None => expanded.push('%'),
         }
     }
 
