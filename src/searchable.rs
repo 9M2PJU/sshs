@@ -32,7 +32,9 @@ where
     }
 
     pub fn search(&mut self, value: &str) {
-        if value.is_empty() {
+        let tokens: Vec<&str> = value.split_whitespace().collect();
+
+        if tokens.is_empty() {
             self.filtered.clone_from(&self.vec);
             return;
         }
@@ -41,11 +43,15 @@ where
             .vec
             .iter()
             .filter_map(|item| {
-                let score = item
-                    .search_texts()
-                    .iter()
-                    .filter_map(|text| self.matcher.fuzzy_match(text, value))
-                    .max()?;
+                let texts = item.search_texts();
+                let score = tokens.iter().try_fold(0i64, |acc, token| {
+                    let best = texts
+                        .iter()
+                        .filter_map(|text| self.matcher.fuzzy_match(text, token))
+                        .max()?;
+
+                    Some(acc + best)
+                })?;
 
                 Some((item.clone(), score))
             })
@@ -125,5 +131,29 @@ mod tests {
         searchable.search("two");
         assert_eq!(searchable.len(), 1);
         assert_eq!(searchable[0].0, "beta");
+    }
+
+    #[test]
+    fn test_search_requires_every_token_to_match() {
+        let items = vec![
+            Item("production/example_machine", "10.0.0.1"),
+            Item("staging/example_machine", "10.0.0.2"),
+            Item("production/other_machine", "10.0.0.3"),
+        ];
+        let mut searchable = Searchable::new(false, items, "");
+
+        searchable.search("prod example");
+        assert_eq!(searchable.len(), 1);
+        assert_eq!(searchable[0].0, "production/example_machine");
+
+        searchable.search("2 example");
+        assert_eq!(searchable.len(), 1);
+        assert_eq!(searchable[0].0, "staging/example_machine");
+
+        searchable.search("prod nomatch");
+        assert_eq!(searchable.len(), 0);
+
+        searchable.search("   ");
+        assert_eq!(searchable.len(), 3);
     }
 }
