@@ -10,6 +10,7 @@ pub enum InvalidIncludeErrorDetails {
     Glob(glob::GlobError),
     Io(std::io::Error),
     HostsInsideHostBlock,
+    MaxDepthExceeded,
 }
 
 #[derive(Debug)]

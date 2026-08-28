@@ -12,6 +12,8 @@ use super::parser_error::ParseError;
 use super::parser_error::UnknownEntryError;
 use super::{EntryType, Host};
 
+const MAX_INCLUDE_DEPTH: usize = 16;
+
 #[derive(Debug)]
 pub struct Parser {
     ignore_unknown_entries: bool,
@@ -46,7 +48,7 @@ impl Parser {
     ///
     /// Will return `Err` if the SSH configuration cannot be parsed.
     pub fn parse(&self, reader: &mut impl BufRead) -> Result<Vec<Host>, ParseError> {
-        let (global_host, mut hosts) = self.parse_raw(reader)?;
+        let (global_host, mut hosts) = self.parse_raw(reader, 0)?;
 
         if !global_host.is_empty() {
             for host in &mut hosts {
@@ -57,7 +59,11 @@ impl Parser {
         Ok(hosts)
     }
 
-    fn parse_raw(&self, reader: &mut impl BufRead) -> Result<(Host, Vec<Host>), ParseError> {
+    fn parse_raw(
+        &self,
+        reader: &mut impl BufRead,
+        depth: usize,
+    ) -> Result<(Host, Vec<Host>), ParseError> {
         let mut parent_host = Host::new(Vec::new());
         let mut hosts = Vec::new();
 
@@ -89,6 +95,14 @@ impl Parser {
                     continue;
                 }
                 EntryType::Include => {
+                    if depth >= MAX_INCLUDE_DEPTH {
+                        return Err(InvalidIncludeError {
+                            line,
+                            details: InvalidIncludeErrorDetails::MaxDepthExceeded,
+                        }
+                        .into());
+                    }
+
                     let mut include_path = shellexpand::tilde(&entry.1).to_string();
 
                     if !include_path.starts_with('/') {
@@ -120,7 +134,8 @@ impl Parser {
                         };
 
                         let mut file = BufReader::new(File::open(path)?);
-                        let (included_parent_host, included_hosts) = self.parse_raw(&mut file)?;
+                        let (included_parent_host, included_hosts) =
+                            self.parse_raw(&mut file, depth + 1)?;
 
                         if hosts.is_empty() {
                             parent_host.extend_entries(&included_parent_host);
@@ -301,6 +316,26 @@ mod tests {
             result.unwrap_err(),
             ParseError::UnparseableLine(_)
         ));
+    }
+
+    #[test]
+    fn test_self_including_file_errors_instead_of_overflowing() {
+        let path = std::env::temp_dir().join("sshs_test_self_include.conf");
+        std::fs::write(&path, format!("Include {}\nHost a\n", path.display())).unwrap();
+
+        let parser = Parser::new();
+        let result = parser.parse_file(&path);
+        std::fs::remove_file(&path).ok();
+
+        match result.unwrap_err() {
+            ParseError::InvalidInclude(err) => {
+                assert!(matches!(
+                    err.details,
+                    InvalidIncludeErrorDetails::MaxDepthExceeded
+                ));
+            }
+            other => panic!("expected InvalidInclude error, got {other:?}"),
+        }
     }
 
     #[test]
