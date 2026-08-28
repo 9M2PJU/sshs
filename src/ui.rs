@@ -49,6 +49,7 @@ pub struct App {
     table_state: TableState,
     hosts: Searchable<ssh::Host>,
     table_columns_constraints: Vec<Constraint>,
+    page_step: usize,
 
     palette: tailwind::Palette,
 }
@@ -104,6 +105,7 @@ impl App {
 
             table_state: TableState::default().with_selected(0),
             table_columns_constraints: Vec::new(),
+            page_step: 21,
             palette: tailwind::BLUE,
 
             hosts: Searchable::new(config.sort_by_score, hosts, &search_input),
@@ -193,13 +195,16 @@ impl App {
                 .select(Some(self.hosts.len().saturating_sub(1))),
             PageDown => {
                 let i = self.table_state.selected().unwrap_or(0);
-                let target = min(i.saturating_add(21), self.hosts.len().saturating_sub(1));
+                let target = min(
+                    i.saturating_add(self.page_step),
+                    self.hosts.len().saturating_sub(1),
+                );
 
                 self.table_state.select(Some(target));
             }
             PageUp => {
                 let i = self.table_state.selected().unwrap_or(0);
-                let target = max(i.saturating_sub(21), 0);
+                let target = max(i.saturating_sub(self.page_step), 0);
 
                 self.table_state.select(Some(target));
             }
@@ -463,6 +468,9 @@ fn render_searchbar(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
+    // The visible row count: the area minus the two border lines and the header.
+    app.page_step = max(usize::from(area.height.saturating_sub(3)), 1);
+
     let header_style = Style::default().fg(tailwind::CYAN.c500);
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
 
