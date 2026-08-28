@@ -249,6 +249,7 @@ mod integration_tests {
     }
 
     #[test]
+    #[ignore = "needs the Docker SSH server from docker-compose.yml"]
     fn test_run_command_template_docker() {
         let hosts = parse_config(&testdata("docker.conf")).unwrap();
         assert_eq!(hosts.len(), 1);
@@ -265,6 +266,7 @@ mod integration_tests {
     }
 
     #[test]
+    #[ignore = "needs the Docker SSH server from docker-compose.yml"]
     fn test_run_command_template_spaces_in_name() {
         let hosts = parse_config(&testdata("spaces_docker.conf")).unwrap();
         assert_eq!(hosts.len(), 1);
