@@ -56,20 +56,6 @@ impl Host {
 
         Ok(Command::new(command).args(args).spawn()?.wait()?)
     }
-
-    /// Uses the provided Handlebars template to run a command.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if the command cannot be executed.
-    pub fn run_command_template(&self, pattern: &str) -> anyhow::Result<()> {
-        let status = self.spawn_command_template(pattern)?;
-        if !status.success() {
-            std::process::exit(status.code().unwrap_or(1));
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Debug)]

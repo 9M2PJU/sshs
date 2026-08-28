@@ -228,13 +228,13 @@ impl App {
                 restore_terminal(terminal).expect("Failed to restore terminal");
 
                 if let Some(template) = &self.config.command_template_on_session_start {
-                    host.run_command_template(template)?;
+                    host.spawn_command_template(template)?;
                 }
 
-                host.run_command_template(&self.config.command_template)?;
+                host.spawn_command_template(&self.config.command_template)?;
 
                 if let Some(template) = &self.config.command_template_on_session_end {
-                    host.run_command_template(template)?;
+                    host.spawn_command_template(template)?;
                 }
 
                 setup_terminal(terminal).expect("Failed to setup terminal");
