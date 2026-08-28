@@ -40,15 +40,31 @@ impl Parser {
     where
         P: AsRef<Path>,
     {
+        // OpenSSH resolves relative Include paths against /etc/ssh for the
+        // system configuration file, and against ~/.ssh otherwise.
+        let include_base = if path.as_ref().starts_with("/etc/ssh") {
+            "/etc/ssh".to_string()
+        } else {
+            shellexpand::tilde("~/.ssh").to_string()
+        };
+
         let mut reader = BufReader::new(File::open(path)?);
-        self.parse(&mut reader)
+        self.parse_with_base(&mut reader, &include_base)
     }
 
     /// # Errors
     ///
     /// Will return `Err` if the SSH configuration cannot be parsed.
     pub fn parse(&self, reader: &mut impl BufRead) -> Result<Vec<Host>, ParseError> {
-        let (global_host, mut hosts) = self.parse_raw(reader, 0)?;
+        self.parse_with_base(reader, &shellexpand::tilde("~/.ssh"))
+    }
+
+    fn parse_with_base(
+        &self,
+        reader: &mut impl BufRead,
+        include_base: &str,
+    ) -> Result<Vec<Host>, ParseError> {
+        let (global_host, mut hosts) = self.parse_raw(reader, 0, include_base)?;
 
         if !global_host.is_empty() {
             for host in &mut hosts {
@@ -63,6 +79,7 @@ impl Parser {
         &self,
         reader: &mut impl BufRead,
         depth: usize,
+        include_base: &str,
     ) -> Result<(Host, Vec<Host>), ParseError> {
         let mut parent_host = Host::new(Vec::new());
         let mut hosts = Vec::new();
@@ -117,8 +134,7 @@ impl Parser {
                     let mut include_path = shellexpand::tilde(&entry.1).to_string();
 
                     if !include_path.starts_with('/') {
-                        let ssh_config_directory = shellexpand::tilde("~/.ssh").to_string();
-                        include_path = format!("{ssh_config_directory}/{include_path}");
+                        include_path = format!("{include_base}/{include_path}");
                     }
 
                     let paths = match glob(&include_path) {
@@ -146,7 +162,7 @@ impl Parser {
 
                         let mut file = BufReader::new(File::open(path)?);
                         let (included_parent_host, included_hosts) =
-                            self.parse_raw(&mut file, depth + 1)?;
+                            self.parse_raw(&mut file, depth + 1, include_base)?;
 
                         if hosts.is_empty() {
                             parent_host.extend_entries(&included_parent_host);
