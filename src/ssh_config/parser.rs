@@ -67,16 +67,17 @@ impl Parser {
         let mut parent_host = Host::new(Vec::new());
         let mut hosts = Vec::new();
 
-        let mut line = String::new();
-        while reader.read_line(&mut line)? > 0 {
+        let mut buf = String::new();
+        while reader.read_line(&mut buf)? > 0 {
             // We separate parts that contain comments with #
-            line = line.split('#').next().unwrap().trim().to_string();
+            let line = buf.split('#').next().unwrap().trim().to_string();
+            buf.clear();
+
             if line.is_empty() {
                 continue;
             }
 
             let entry = parse_line(&line)?;
-            line.clear();
 
             match entry.0 {
                 EntryType::Unknown(_) => {
@@ -286,7 +287,15 @@ mod tests {
 
         let result = parser.parse_file(testdata("unknown_entry.conf"));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ParseError::UnknownEntry(_)));
+        match result.unwrap_err() {
+            ParseError::UnknownEntry(err) => {
+                assert!(
+                    !err.line.is_empty(),
+                    "error should carry the offending line"
+                );
+            }
+            other => panic!("expected UnknownEntry error, got {other:?}"),
+        }
     }
 
     #[test]
