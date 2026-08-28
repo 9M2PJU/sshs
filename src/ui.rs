@@ -20,7 +20,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{searchable::Searchable, ssh};
 
-const INFO_TEXT: &str = "(Esc) quit | (↑) move up | (↓) move down | (enter) select";
+const INFO_TEXT: &str = "(Esc) quit | (↑) move up | (↓) move down | (enter) select | (ctrl+r) reload";
 
 #[derive(Clone)]
 #[allow(clippy::struct_excessive_bools)]
@@ -64,35 +64,7 @@ impl App {
     ///
     /// Will return `Err` if the SSH configuration file cannot be parsed.
     pub fn new(config: &AppConfig) -> Result<App> {
-        let mut hosts = Vec::new();
-
-        for path in &config.config_paths {
-            let parsed_hosts = match ssh::parse_config(path) {
-                Ok(hosts) => hosts,
-                Err(err) => {
-                    if let ssh::ParseConfigError::Io(io_err) = &err {
-                        if io_err.kind() == std::io::ErrorKind::NotFound {
-                            if path == "/etc/ssh/ssh_config" {
-                                // Ignore missing system-wide SSH configuration file
-                                continue;
-                            }
-
-                            anyhow::bail!(
-                                "SSH configuration file not found: {path}\nCreate it, or pass a different path with -c/--config."
-                            );
-                        }
-                    }
-
-                    anyhow::bail!("Failed to parse SSH configuration file: {err:?}");
-                }
-            };
-
-            hosts.extend(parsed_hosts);
-        }
-
-        if config.sort_by_name {
-            hosts.sort_by_key(|host| host.name.to_lowercase());
-        }
+        let hosts = load_hosts(config)?;
 
         let search_input = config.search_filter.clone().unwrap_or_default();
 
@@ -252,6 +224,10 @@ impl App {
                 self.previous();
                 AppKeyAction::Ok
             }
+            Char('r') => {
+                self.reload_hosts();
+                AppKeyAction::Ok
+            }
             _ => AppKeyAction::Continue,
         }
     }
@@ -278,6 +254,16 @@ impl App {
         } else {
             self.hosts.search(self.search.value());
             self.table_state.select(Some(0));
+        }
+    }
+
+    /// Re-reads the configuration files. Keeps the current list when a file
+    /// no longer parses.
+    fn reload_hosts(&mut self) {
+        if let Ok(hosts) = load_hosts(&self.config) {
+            self.hosts = Searchable::new(self.config.sort_by_score, hosts, self.search.value());
+            self.table_state.select(Some(0));
+            self.calculate_table_columns_constraints();
         }
     }
 
@@ -392,6 +378,40 @@ impl App {
 
         self.table_columns_constraints = new_constraints;
     }
+}
+
+fn load_hosts(config: &AppConfig) -> Result<Vec<ssh::Host>> {
+    let mut hosts = Vec::new();
+
+    for path in &config.config_paths {
+        let parsed_hosts = match ssh::parse_config(path) {
+            Ok(hosts) => hosts,
+            Err(err) => {
+                if let ssh::ParseConfigError::Io(io_err) = &err {
+                    if io_err.kind() == std::io::ErrorKind::NotFound {
+                        if path == "/etc/ssh/ssh_config" {
+                            // Ignore missing system-wide SSH configuration file
+                            continue;
+                        }
+
+                        anyhow::bail!(
+                            "SSH configuration file not found: {path}\nCreate it, or pass a different path with -c/--config."
+                        );
+                    }
+                }
+
+                anyhow::bail!("Failed to parse SSH configuration file: {err:?}");
+            }
+        };
+
+        hosts.extend(parsed_hosts);
+    }
+
+    if config.sort_by_name {
+        hosts.sort_by_key(|host| host.name.to_lowercase());
+    }
+
+    Ok(hosts)
 }
 
 fn palette_by_name(name: &str) -> Result<tailwind::Palette> {
@@ -580,6 +600,29 @@ mod tests {
     fn type_char(app: &mut App, c: char) {
         let ev = Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         app.handle_search_event(&ev);
+    }
+
+    #[test]
+    fn test_reload_hosts_picks_up_file_changes() {
+        let path = std::env::temp_dir().join("sshs_test_reload.conf");
+        std::fs::write(&path, "Host first\n  Hostname first.example.com\n").unwrap();
+
+        let mut config = test_config();
+        config.config_paths = vec![path.to_string_lossy().into_owned()];
+
+        let mut app = App::new(&config).unwrap();
+        assert_eq!(app.hosts.len(), 1);
+
+        std::fs::write(
+            &path,
+            "Host first\n  Hostname first.example.com\nHost second\n  Hostname second.example.com\n",
+        )
+        .unwrap();
+        app.reload_hosts();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(app.hosts.len(), 2);
+        assert_eq!(app.table_state.selected(), Some(0));
     }
 
     #[test]
