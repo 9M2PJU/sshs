@@ -327,7 +327,7 @@ impl App {
 
         let name_len = self
             .hosts
-            .iter()
+            .non_filtered_iter()
             .map(|d| d.name.as_str())
             .map(UnicodeWidthStr::width)
             .max()
@@ -400,6 +400,8 @@ impl App {
                 .skip(1)
                 .map(|len| Constraint::Min(u16::try_from(*len).unwrap_or_default() + 1)),
         );
+
+        self.table_columns_constraints = new_constraints;
     }
 }
 
@@ -563,6 +565,17 @@ mod tests {
     fn type_char(app: &mut App, c: char) {
         let ev = Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         app.handle_search_event(&ev);
+    }
+
+    #[test]
+    fn test_table_columns_constraints_are_computed() {
+        let app = App::new(&test_config()).unwrap();
+
+        assert_eq!(app.table_columns_constraints.len(), 5);
+        assert!(matches!(
+            app.table_columns_constraints[0],
+            Constraint::Length(len) if len > 1
+        ));
     }
 
     /// Regression test for <https://github.com/quantumsheep/sshs/issues/120>:
