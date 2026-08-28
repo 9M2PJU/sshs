@@ -1,10 +1,7 @@
 use anyhow::Result;
 use crossterm::{
     cursor::{Hide, Show},
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers,
-    },
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -405,12 +402,7 @@ where
 
     // setup terminal
     enable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        Hide,
-        EnterAlternateScreen,
-        EnableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), Hide, EnterAlternateScreen)?;
 
     Ok(())
 }
@@ -425,12 +417,7 @@ where
 
     // restore terminal
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        Show,
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-    )?;
+    execute!(terminal.backend_mut(), Show, LeaveAlternateScreen)?;
 
     Ok(())
 }
