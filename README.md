@@ -10,7 +10,7 @@ It uses `~/.ssh/config` to list and connect to hosts.
 <br>
 <br>
 
-[![example](https://i.imgur.com/vdve7d5.gif)](https://asciinema.org/a/642202)
+![example](.github/demo/demo.gif)
 
 ## Requirements
 

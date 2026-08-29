@@ -10,6 +10,10 @@ authors = ["Nathanael Demacon"]
 name = "sshs"
 path = "src/main.rs"
 
+[[example]]
+name = "demo"
+path = "scripts/demo.rs"
+
 [profile.release]
 strip = true
 lto = true
