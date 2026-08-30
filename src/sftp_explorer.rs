@@ -201,6 +201,11 @@ impl SftpExplorer {
         for arg in port_args {
             cmd.arg(arg);
         }
+        if let Some(i) = &self.host.identity_file {
+            if !i.is_empty() {
+                cmd.arg("-i").arg(i);
+            }
+        }
         cmd.arg(&host_name);
         cmd.arg(format!("ls -la --time-style=long-iso \"{path}\" 2>/dev/null || ls -la \"{path}\""));
 
@@ -215,12 +220,17 @@ impl SftpExplorer {
             }
             Ok(output) => {
                 let err_msg = String::from_utf8_lossy(&output.stderr);
-                let display_err = if err_msg.contains("Permission denied") {
+                let clean_err = err_msg
+                    .lines()
+                    .filter(|l| !l.starts_with("** WARNING"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let display_err = if clean_err.contains("Permission denied") {
                     "SSH key auth required. Install key with ssh-copy-id or press Enter in main view".to_string()
-                } else if err_msg.is_empty() {
+                } else if clean_err.is_empty() {
                     format!("Remote listing failed for '{path}'")
                 } else {
-                    format!("Remote error: {}", err_msg.lines().next().unwrap_or("unknown error"))
+                    format!("Remote error: {clean_err}")
                 };
                 self.set_status(display_err);
                 if path != "/" && path != "." {
@@ -426,6 +436,7 @@ impl SftpExplorer {
 
                 let mut cmd = Command::new("scp");
                 cmd.arg("-r");
+                cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
                 cmd.arg("-o").arg("ConnectTimeout=10");
                 if let Some(p) = &self.host.port {
                     if !p.is_empty() && p != "22" {
@@ -448,7 +459,12 @@ impl SftpExplorer {
                     }
                     Ok(output) => {
                         let err = String::from_utf8_lossy(&output.stderr);
-                        let msg = err.lines().next().unwrap_or("Upload failed");
+                        let clean_err = err
+                            .lines()
+                            .filter(|l| !l.starts_with("** WARNING"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let msg = if clean_err.is_empty() { "Upload failed" } else { &clean_err };
                         self.set_status(format!("Upload error: {msg}"));
                     }
                     Err(e) => self.set_status(format!("Upload error: {e}")),
@@ -471,6 +487,7 @@ impl SftpExplorer {
 
                 let mut cmd = Command::new("scp");
                 cmd.arg("-r");
+                cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
                 cmd.arg("-o").arg("ConnectTimeout=10");
                 if let Some(p) = &self.host.port {
                     if !p.is_empty() && p != "22" {
@@ -493,7 +510,12 @@ impl SftpExplorer {
                     }
                     Ok(output) => {
                         let err = String::from_utf8_lossy(&output.stderr);
-                        let msg = err.lines().next().unwrap_or("Download failed");
+                        let clean_err = err
+                            .lines()
+                            .filter(|l| !l.starts_with("** WARNING"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let msg = if clean_err.is_empty() { "Download failed" } else { &clean_err };
                         self.set_status(format!("Download error: {msg}"));
                     }
                     Err(e) => self.set_status(format!("Download error: {e}")),
@@ -536,20 +558,36 @@ impl SftpExplorer {
                     };
 
                     let mut cmd = Command::new("ssh");
+                    cmd.arg("-o").arg("BatchMode=yes");
+                    cmd.arg("-o").arg("ConnectTimeout=6");
                     if let Some(p) = &self.host.port {
                         if !p.is_empty() && p != "22" {
                             cmd.arg("-p").arg(p);
                         }
                     }
+                    if let Some(i) = &self.host.identity_file {
+                        if !i.is_empty() {
+                            cmd.arg("-i").arg(i);
+                        }
+                    }
                     cmd.arg(&self.host.name);
                     cmd.arg(format!("rm -rf \"{full_remote}\""));
 
-                    match cmd.status() {
-                        Ok(s) if s.success() => {
+                    match cmd.output() {
+                        Ok(output) if output.status.success() => {
                             self.set_status(format!("Deleted remote '{}'", entry.name));
                             self.refresh_remote();
                         }
-                        Ok(_) => self.set_status(format!("Delete of remote '{}' failed", entry.name)),
+                        Ok(output) => {
+                            let err = String::from_utf8_lossy(&output.stderr);
+                            let clean_err = err
+                                .lines()
+                                .filter(|l| !l.starts_with("** WARNING"))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            let msg = if clean_err.is_empty() { "Delete failed" } else { &clean_err };
+                            self.set_status(format!("Delete error: {msg}"));
+                        }
                         Err(e) => self.set_status(format!("Delete error: {e}")),
                     }
                 }
@@ -593,9 +631,16 @@ impl SftpExplorer {
                     };
 
                     let mut cmd = Command::new("ssh");
+                    cmd.arg("-o").arg("BatchMode=yes");
+                    cmd.arg("-o").arg("ConnectTimeout=6");
                     if let Some(p) = &self.host.port {
                         if !p.is_empty() && p != "22" {
                             cmd.arg("-p").arg(p);
+                        }
+                    }
+                    if let Some(i) = &self.host.identity_file {
+                        if !i.is_empty() {
+                            cmd.arg("-i").arg(i);
                         }
                     }
                     cmd.arg(&self.host.name);
@@ -651,20 +696,36 @@ impl SftpExplorer {
                 };
 
                 let mut cmd = Command::new("ssh");
+                cmd.arg("-o").arg("BatchMode=yes");
+                cmd.arg("-o").arg("ConnectTimeout=6");
                 if let Some(p) = &self.host.port {
                     if !p.is_empty() && p != "22" {
                         cmd.arg("-p").arg(p);
                     }
                 }
+                if let Some(i) = &self.host.identity_file {
+                    if !i.is_empty() {
+                        cmd.arg("-i").arg(i);
+                    }
+                }
                 cmd.arg(&self.host.name);
                 cmd.arg(format!("mkdir -p \"{target}\""));
 
-                match cmd.status() {
-                    Ok(s) if s.success() => {
+                match cmd.output() {
+                    Ok(output) if output.status.success() => {
                         self.set_status(format!("Created remote directory '{name}'"));
                         self.refresh_remote();
                     }
-                    Ok(_) => self.set_status(format!("Remote mkdir '{name}' failed")),
+                    Ok(output) => {
+                        let err = String::from_utf8_lossy(&output.stderr);
+                        let clean_err = err
+                            .lines()
+                            .filter(|l| !l.starts_with("** WARNING"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let msg = if clean_err.is_empty() { "Remote mkdir failed" } else { &clean_err };
+                        self.set_status(format!("Mkdir error: {msg}"));
+                    }
                     Err(e) => self.set_status(format!("Mkdir error: {e}")),
                 }
             }
