@@ -1,6 +1,7 @@
 pub mod ascii_art;
 pub mod config;
 pub mod searchable;
+pub mod sftp_explorer;
 pub mod ssh;
 pub mod ssh_config;
 #[cfg(test)]

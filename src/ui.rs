@@ -1,7 +1,10 @@
 use anyhow::Result;
 use crossterm::{
     cursor::{Hide, Show},
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -146,6 +149,7 @@ pub struct App {
     show_delete_modal: Option<String>,
     add_host_form: AddHostForm,
     tunnel_form: Option<TunnelForm>,
+    pub sftp_explorer: Option<crate::sftp_explorer::SftpExplorer>,
     post_connect_prompt: Option<PostConnectPrompt>,
     status_message: Option<(String, Instant)>,
     anim_tick: u64,
@@ -191,6 +195,7 @@ impl App {
             show_delete_modal: None,
             add_host_form: AddHostForm::default(),
             tunnel_form: None,
+            sftp_explorer: None,
             post_connect_prompt: None,
             status_message: None,
             anim_tick: 0,
@@ -238,25 +243,37 @@ impl App {
             if crossterm::event::poll(tick_rate)? {
                 let ev = event::read()?;
 
-                if let Event::Key(key) = ev {
-                    if key.kind == KeyEventKind::Press {
-                        let action = self.on_key_press(terminal, key, &ev)?;
+                match ev {
+                    Event::Key(key) => {
+                        if key.kind == KeyEventKind::Press {
+                            let action = self.on_key_press(terminal, key, &ev)?;
+                            match action {
+                                AppKeyAction::Ok => continue,
+                                AppKeyAction::Stop => break,
+                                AppKeyAction::Continue => {}
+                            }
+                        }
+
+                        if !self.show_help_modal
+                            && !self.show_details_modal
+                            && !self.show_add_host_modal
+                            && !self.show_tunnel_modal
+                            && self.show_delete_modal.is_none()
+                            && self.post_connect_prompt.is_none()
+                            && self.sftp_explorer.is_none()
+                        {
+                            self.handle_search_event(&ev);
+                        }
+                    }
+                    Event::Mouse(mouse) => {
+                        let action = self.on_mouse_event(terminal, mouse)?;
                         match action {
                             AppKeyAction::Ok => continue,
                             AppKeyAction::Stop => break,
                             AppKeyAction::Continue => {}
                         }
                     }
-
-                    if !self.show_help_modal
-                        && !self.show_details_modal
-                        && !self.show_add_host_modal
-                        && !self.show_tunnel_modal
-                        && self.show_delete_modal.is_none()
-                        && self.post_connect_prompt.is_none()
-                    {
-                        self.handle_search_event(&ev);
-                    }
+                    _ => {}
                 }
             }
 
@@ -282,6 +299,94 @@ impl App {
         use KeyCode::*;
 
         let is_ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
+
+        // 0. SFTP Explorer View (Midnight Commander Dual-Pane TUI)
+        if let Some(explorer) = &mut self.sftp_explorer {
+            if explorer.viewer_content.is_some() {
+                match key.code {
+                    Esc | Char('q') | Enter => {
+                        explorer.viewer_content = None;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    _ => return Ok(AppKeyAction::Ok),
+                }
+            }
+
+            if let Some(input) = &mut explorer.mkdir_input {
+                match key.code {
+                    Esc => {
+                        explorer.mkdir_input = None;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Enter => {
+                        let name = input.value().to_string();
+                        explorer.mkdir_input = None;
+                        explorer.make_directory(&name);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    _ => {
+                        input.handle_event(ev);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                }
+            }
+
+            match key.code {
+                Esc | Char('q') => {
+                    self.sftp_explorer = None;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Tab => {
+                    explorer.switch_pane();
+                    return Ok(AppKeyAction::Ok);
+                }
+                Down | Char('j') => {
+                    explorer.select_next();
+                    return Ok(AppKeyAction::Ok);
+                }
+                Up | Char('k') => {
+                    explorer.select_previous();
+                    return Ok(AppKeyAction::Ok);
+                }
+                Enter => {
+                    explorer.enter_directory();
+                    return Ok(AppKeyAction::Ok);
+                }
+                F(3) | Char('v') => {
+                    explorer.view_selected();
+                    return Ok(AppKeyAction::Ok);
+                }
+                F(5) | Char('c') => {
+                    explorer.copy_or_transfer();
+                    return Ok(AppKeyAction::Ok);
+                }
+                F(7) | Char('m') => {
+                    explorer.mkdir_input = Some("new_folder".into());
+                    return Ok(AppKeyAction::Ok);
+                }
+                F(8) | Char('d') | Delete => {
+                    explorer.delete_selected();
+                    return Ok(AppKeyAction::Ok);
+                }
+                F(9) | Char('o') => {
+                    let target_url = if let Some(u) = &explorer.host.user {
+                        format!("sftp://{}@{}{}/", u, explorer.host.destination, if let Some(p) = &explorer.host.port { format!(":{p}") } else { String::new() })
+                    } else {
+                        format!("sftp://{}{}/", explorer.host.destination, if let Some(p) = &explorer.host.port { format!(":{p}") } else { String::new() })
+                    };
+                    if Command::new("which").arg("dolphin").status().map(|s| s.success()).unwrap_or(false) {
+                        let _ = Command::new("dolphin").arg(&target_url).spawn();
+                        explorer.set_status(format!("Opened '{target_url}' in Dolphin!"));
+                    } else if Command::new("which").arg("mc").status().map(|s| s.success()).unwrap_or(false) {
+                        restore_terminal(terminal).expect("Failed to restore terminal");
+                        let _ = Command::new("mc").arg(&target_url).status();
+                        setup_terminal(terminal).expect("Failed to setup terminal");
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => return Ok(AppKeyAction::Ok),
+            }
+        }
 
         // 1. Delete Confirmation Modal
         if let Some(host_name) = self.show_delete_modal.clone() {
@@ -772,7 +877,7 @@ impl App {
 
     fn launch_sftp_for_selected_host<B>(
         &mut self,
-        terminal: &Rc<RefCell<Terminal<B>>>,
+        _terminal: &Rc<RefCell<Terminal<B>>>,
     ) -> Result<AppKeyAction>
     where
         B: Backend + std::io::Write,
@@ -784,23 +889,7 @@ impl App {
         }
 
         let host: ssh::Host = self.hosts[selected].clone();
-
-        restore_terminal(terminal).expect("Failed to restore terminal");
-        println!("\n📂 Starting interactive SFTP session to '{}'...\n", host.name);
-
-        let res = host.spawn_sftp();
-
-        setup_terminal(terminal).expect("Failed to setup terminal");
-
-        match res {
-            Ok(_) => {
-                self.set_status_message(format!("SFTP session with '{}' closed", host.name));
-            }
-            Err(e) => {
-                self.set_status_message(format!("SFTP error: {e}"));
-            }
-        }
-
+        self.sftp_explorer = Some(crate::sftp_explorer::SftpExplorer::new(host));
         Ok(AppKeyAction::Ok)
     }
 
@@ -1046,6 +1135,281 @@ impl App {
         self.table_state.select(Some(i));
     }
 
+    fn get_layout_offsets(&self, height: u16) -> (u16, u16) {
+        let (show_full, show_mini, banner_height) = if height >= 24 {
+            let req_h = self.ascii_art_style.required_height();
+            if req_h > 0 { (true, false, req_h) } else { (false, false, 0) }
+        } else if height >= 14 && self.ascii_art_style != AsciiArtStyle::Off {
+            (false, true, 1)
+        } else {
+            (false, false, 0)
+        };
+        let _ = (show_full, show_mini);
+        (banner_height, 3)
+    }
+
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    fn on_mouse_event<B>(
+        &mut self,
+        terminal: &Rc<RefCell<Terminal<B>>>,
+        mouse: MouseEvent,
+    ) -> Result<AppKeyAction>
+    where
+        B: Backend + std::io::Write,
+        <B as Backend>::Error: Send + Sync + 'static,
+    {
+        let term_size = terminal.borrow().size()?;
+        let width = term_size.width;
+        let height = term_size.height;
+
+        // 1. If SFTP Explorer is open:
+        if let Some(explorer) = &mut self.sftp_explorer {
+            match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    explorer.select_next();
+                    return Ok(AppKeyAction::Ok);
+                }
+                MouseEventKind::ScrollUp => {
+                    explorer.select_previous();
+                    return Ok(AppKeyAction::Ok);
+                }
+                MouseEventKind::Down(MouseButton::Right) => {
+                    if explorer.viewer_content.is_some() || explorer.mkdir_input.is_some() {
+                        explorer.viewer_content = None;
+                        explorer.mkdir_input = None;
+                    } else {
+                        // Right click opens viewer for file under cursor
+                        let is_left_pane = mouse.column < width / 2;
+                        if is_left_pane {
+                            explorer.active_pane = crate::sftp_explorer::ActivePane::Local;
+                        } else {
+                            explorer.active_pane = crate::sftp_explorer::ActivePane::Remote;
+                        }
+                        if mouse.row >= 4 && mouse.row < height.saturating_sub(4) {
+                            let clicked_idx = (mouse.row - 4) as usize;
+                            match explorer.active_pane {
+                                crate::sftp_explorer::ActivePane::Local => {
+                                    if clicked_idx < explorer.local_entries.len() {
+                                        explorer.local_selected = clicked_idx;
+                                        explorer.local_table_state.select(Some(clicked_idx));
+                                        explorer.view_selected();
+                                    }
+                                }
+                                crate::sftp_explorer::ActivePane::Remote => {
+                                    if clicked_idx < explorer.remote_entries.len() {
+                                        explorer.remote_selected = clicked_idx;
+                                        explorer.remote_table_state.select(Some(clicked_idx));
+                                        explorer.view_selected();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if explorer.viewer_content.is_some() {
+                        explorer.viewer_content = None;
+                        return Ok(AppKeyAction::Ok);
+                    }
+
+                    // Check footer click
+                    if mouse.row >= height.saturating_sub(3) {
+                        let col_pct = (mouse.column as f32) / (width as f32);
+                        if col_pct < 0.15 {
+                            explorer.switch_pane();
+                        } else if col_pct < 0.30 {
+                            explorer.enter_directory();
+                        } else if col_pct < 0.42 {
+                            explorer.view_selected();
+                        } else if col_pct < 0.55 {
+                            explorer.copy_or_transfer();
+                        } else if col_pct < 0.68 {
+                            explorer.mkdir_input = Some("new_folder".into());
+                        } else if col_pct < 0.80 {
+                            explorer.delete_selected();
+                        } else {
+                            self.sftp_explorer = None;
+                        }
+                        return Ok(AppKeyAction::Ok);
+                    }
+
+                    // Main dual panes click
+                    let is_left_pane = mouse.column < width / 2;
+                    if is_left_pane {
+                        explorer.active_pane = crate::sftp_explorer::ActivePane::Local;
+                        if mouse.row >= 4 && mouse.row < height.saturating_sub(4) {
+                            let clicked_idx = (mouse.row - 4) as usize;
+                            if clicked_idx < explorer.local_entries.len() {
+                                if explorer.local_selected == clicked_idx {
+                                    // Clicking already selected row enters directory
+                                    explorer.enter_directory();
+                                } else {
+                                    explorer.local_selected = clicked_idx;
+                                    explorer.local_table_state.select(Some(clicked_idx));
+                                }
+                            }
+                        }
+                    } else {
+                        explorer.active_pane = crate::sftp_explorer::ActivePane::Remote;
+                        if mouse.row >= 4 && mouse.row < height.saturating_sub(4) {
+                            let clicked_idx = (mouse.row - 4) as usize;
+                            if clicked_idx < explorer.remote_entries.len() {
+                                if explorer.remote_selected == clicked_idx {
+                                    // Clicking already selected row enters directory
+                                    explorer.enter_directory();
+                                } else {
+                                    explorer.remote_selected = clicked_idx;
+                                    explorer.remote_table_state.select(Some(clicked_idx));
+                                }
+                            }
+                        }
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => return Ok(AppKeyAction::Ok),
+            }
+        }
+
+        // 2. Modals (Delete, Tunnel, Add, Help, Details)
+        if self.show_delete_modal.is_some() || self.show_tunnel_modal || self.show_add_host_modal || self.show_help_modal || self.show_details_modal || self.post_connect_prompt.is_some() {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Right) => {
+                    self.show_delete_modal = None;
+                    self.show_tunnel_modal = false;
+                    self.show_add_host_modal = false;
+                    self.show_help_modal = false;
+                    self.show_details_modal = false;
+                    self.post_connect_prompt = None;
+                    return Ok(AppKeyAction::Ok);
+                }
+                MouseEventKind::ScrollDown => {
+                    self.next();
+                    return Ok(AppKeyAction::Ok);
+                }
+                MouseEventKind::ScrollUp => {
+                    self.previous();
+                    return Ok(AppKeyAction::Ok);
+                }
+                MouseEventKind::Down(MouseButton::Left)
+                    if self.show_details_modal && mouse.row >= height.saturating_sub(6) =>
+                {
+                    let col_pct = (mouse.column as f32) / (width as f32);
+                    if col_pct < 0.35 {
+                        self.show_details_modal = false;
+                        return self.connect_to_selected_host(terminal);
+                    } else if col_pct < 0.50 {
+                        self.show_details_modal = false;
+                        return self.launch_sftp_for_selected_host(terminal);
+                    } else if col_pct < 0.65 {
+                        self.show_details_modal = false;
+                        return self.launch_x11_for_selected_host(terminal);
+                    } else if col_pct < 0.80 {
+                        self.show_details_modal = false;
+                        self.open_tunnel_modal_for_selected_host();
+                    } else {
+                        self.show_details_modal = false;
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => {}
+            }
+            return Ok(AppKeyAction::Ok);
+        }
+
+        // 3. Main Host Table view
+        match mouse.kind {
+            MouseEventKind::ScrollDown => {
+                self.next();
+                Ok(AppKeyAction::Ok)
+            }
+            MouseEventKind::ScrollUp => {
+                self.previous();
+                Ok(AppKeyAction::Ok)
+            }
+            MouseEventKind::Down(MouseButton::Right) => {
+                // Right click on table row selects and opens Details modal
+                let (banner_h, search_h) = self.get_layout_offsets(height);
+                let table_start = banner_h + search_h + 2; // header + border
+                if mouse.row >= table_start && mouse.row < height.saturating_sub(3) {
+                    let clicked_row = (mouse.row - table_start) as usize;
+                    if clicked_row < self.hosts.len() {
+                        self.table_state.select(Some(clicked_row));
+                        self.show_details_modal = true;
+                    }
+                }
+                Ok(AppKeyAction::Ok)
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let (banner_h, search_h) = self.get_layout_offsets(height);
+                let search_start = banner_h;
+                let table_start = banner_h + search_h + 2;
+                let footer_start = height.saturating_sub(3);
+
+                // Click on Search bar
+                if mouse.row >= search_start && mouse.row < search_start + search_h {
+                    return Ok(AppKeyAction::Ok);
+                }
+
+                // Click on Footer button bar
+                if mouse.row >= footer_start {
+                    let col_pct = (mouse.column as f32) / (width as f32);
+                    if col_pct < 0.10 {
+                        // Connect
+                        return self.connect_to_selected_host(terminal);
+                    } else if col_pct < 0.20 {
+                        // Details
+                        self.show_details_modal = true;
+                    } else if col_pct < 0.30 {
+                        // SFTP
+                        return self.launch_sftp_for_selected_host(terminal);
+                    } else if col_pct < 0.40 {
+                        // X11
+                        return self.launch_x11_for_selected_host(terminal);
+                    } else if col_pct < 0.52 {
+                        // Tunnel / TOR
+                        self.open_tunnel_modal_for_selected_host();
+                    } else if col_pct < 0.62 {
+                        // Add
+                        self.show_add_host_modal = true;
+                        self.add_host_form = AddHostForm { port: "22".into(), ..Default::default() };
+                    } else if col_pct < 0.72 {
+                        // Del
+                        let selected = self.table_state.selected().unwrap_or(0);
+                        if selected < self.hosts.len() {
+                            self.show_delete_modal = Some(self.hosts[selected].name.clone());
+                        }
+                    } else if col_pct < 0.82 {
+                        // Theme
+                        self.cycle_theme();
+                    } else if col_pct < 0.92 {
+                        // Help
+                        self.show_help_modal = true;
+                    } else {
+                        // Quit
+                        return Ok(AppKeyAction::Stop);
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+
+                // Click on Host table row
+                if mouse.row >= table_start && mouse.row < footer_start {
+                    let clicked_row = (mouse.row - table_start) as usize;
+                    if clicked_row < self.hosts.len() {
+                        let prev_selected = self.table_state.selected();
+                        if prev_selected == Some(clicked_row) {
+                            // Double clicking or clicking already selected row connects
+                            return self.connect_to_selected_host(terminal);
+                        }
+                        self.table_state.select(Some(clicked_row));
+                    }
+                }
+                Ok(AppKeyAction::Ok)
+            }
+            _ => Ok(AppKeyAction::Ok),
+        }
+    }
+
     fn reload_hosts(&mut self) {
         let selected = self.table_state.selected().unwrap_or(0);
         let selected_name = if selected < self.hosts.len() {
@@ -1156,7 +1520,7 @@ where
     <B as Backend>::Error: Send + Sync + 'static,
 {
     enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen, Hide)?;
+    execute!(io::stdout(), EnterAlternateScreen, Hide, EnableMouseCapture)?;
     terminal.borrow_mut().clear()?;
     terminal.borrow_mut().hide_cursor()?;
 
@@ -1169,13 +1533,18 @@ where
     <B as Backend>::Error: Send + Sync + 'static,
 {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, Show)?;
+    execute!(io::stdout(), LeaveAlternateScreen, Show, DisableMouseCapture)?;
     terminal.borrow_mut().show_cursor()?;
 
     Ok(())
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
+    if let Some(explorer) = &mut app.sftp_explorer {
+        crate::sftp_explorer::render_sftp_explorer(f, &app.theme, explorer);
+        return;
+    }
+
     let size = f.area();
 
     // Determine layout based on terminal height
