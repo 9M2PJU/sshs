@@ -300,7 +300,7 @@ impl App {
 
         let is_ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
 
-        // 0. SFTP Explorer View (Midnight Commander Dual-Pane TUI)
+        // 0. SSHS Explorer View (Dual-Pane TUI)
         if let Some(explorer) = &mut self.sftp_explorer {
             if explorer.viewer_content.is_some() {
                 match key.code {
@@ -328,6 +328,57 @@ impl App {
                         input.handle_event(ev);
                         return Ok(AppKeyAction::Ok);
                     }
+                }
+            }
+
+            if let Some(menu) = &mut explorer.context_menu {
+                match key.code {
+                    Esc | Char('q') => {
+                        explorer.context_menu = None;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Down | Char('j') => {
+                        menu.selected_index = (menu.selected_index + 1) % 7;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Up | Char('k') => {
+                        menu.selected_index = (menu.selected_index + 6) % 7;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Enter => {
+                        let opt = menu.selected_index;
+                        explorer.execute_context_menu_option(opt);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('1') => {
+                        explorer.execute_context_menu_option(0);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('2') => {
+                        explorer.execute_context_menu_option(1);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('3') => {
+                        explorer.execute_context_menu_option(2);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('4') => {
+                        explorer.execute_context_menu_option(3);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('5') => {
+                        explorer.execute_context_menu_option(4);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('6') => {
+                        explorer.execute_context_menu_option(5);
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('7') => {
+                        explorer.context_menu = None;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    _ => return Ok(AppKeyAction::Ok),
                 }
             }
 
@@ -360,7 +411,7 @@ impl App {
                     explorer.copy_or_transfer();
                     return Ok(AppKeyAction::Ok);
                 }
-                F(7) | Char('m') => {
+                F(7) => {
                     explorer.mkdir_input = Some("new_folder".into());
                     return Ok(AppKeyAction::Ok);
                 }
@@ -368,20 +419,18 @@ impl App {
                     explorer.delete_selected();
                     return Ok(AppKeyAction::Ok);
                 }
+                Char('m') => {
+                    explorer.open_context_menu_at(20, 8);
+                    return Ok(AppKeyAction::Ok);
+                }
+                Char('r') => {
+                    explorer.refresh_local();
+                    explorer.refresh_remote();
+                    explorer.set_status("Refreshed directory listings".to_string());
+                    return Ok(AppKeyAction::Ok);
+                }
                 F(9) | Char('o') => {
-                    let target_url = if let Some(u) = &explorer.host.user {
-                        format!("sftp://{}@{}{}/", u, explorer.host.destination, if let Some(p) = &explorer.host.port { format!(":{p}") } else { String::new() })
-                    } else {
-                        format!("sftp://{}{}/", explorer.host.destination, if let Some(p) = &explorer.host.port { format!(":{p}") } else { String::new() })
-                    };
-                    if Command::new("which").arg("dolphin").status().map(|s| s.success()).unwrap_or(false) {
-                        let _ = Command::new("dolphin").arg(&target_url).spawn();
-                        explorer.set_status(format!("Opened '{target_url}' in Dolphin!"));
-                    } else if Command::new("which").arg("mc").status().map(|s| s.success()).unwrap_or(false) {
-                        restore_terminal(terminal).expect("Failed to restore terminal");
-                        let _ = Command::new("mc").arg(&target_url).status();
-                        setup_terminal(terminal).expect("Failed to setup terminal");
-                    }
+                    explorer.open_external();
                     return Ok(AppKeyAction::Ok);
                 }
                 _ => return Ok(AppKeyAction::Ok),
@@ -1162,7 +1211,7 @@ impl App {
         let width = term_size.width;
         let height = term_size.height;
 
-        // 1. If SFTP Explorer is open:
+        // 1. If SSHS Explorer is open:
         if let Some(explorer) = &mut self.sftp_explorer {
             match mouse.kind {
                 MouseEventKind::ScrollDown => {
@@ -1177,33 +1226,32 @@ impl App {
                     if explorer.viewer_content.is_some() || explorer.mkdir_input.is_some() {
                         explorer.viewer_content = None;
                         explorer.mkdir_input = None;
-                    } else {
-                        // Right click opens viewer for file under cursor
-                        let is_left_pane = mouse.column < width / 2;
+                        explorer.context_menu = None;
+                        return Ok(AppKeyAction::Ok);
+                    }
+
+                    let is_left_pane = mouse.column < width / 2;
+                    explorer.active_pane = if is_left_pane { crate::sftp_explorer::ActivePane::Local } else { crate::sftp_explorer::ActivePane::Remote };
+
+                    if mouse.row >= 5 && mouse.row < height.saturating_sub(3) {
+                        let rel_row = (mouse.row - 5) as usize;
                         if is_left_pane {
-                            explorer.active_pane = crate::sftp_explorer::ActivePane::Local;
+                            let clicked_idx = explorer.local_table_state.offset() + rel_row;
+                            if clicked_idx < explorer.local_entries.len() {
+                                explorer.local_selected = clicked_idx;
+                                explorer.local_table_state.select(Some(clicked_idx));
+                                explorer.open_context_menu_at(mouse.column, mouse.row);
+                            }
                         } else {
-                            explorer.active_pane = crate::sftp_explorer::ActivePane::Remote;
-                        }
-                        if mouse.row >= 4 && mouse.row < height.saturating_sub(4) {
-                            let clicked_idx = (mouse.row - 4) as usize;
-                            match explorer.active_pane {
-                                crate::sftp_explorer::ActivePane::Local => {
-                                    if clicked_idx < explorer.local_entries.len() {
-                                        explorer.local_selected = clicked_idx;
-                                        explorer.local_table_state.select(Some(clicked_idx));
-                                        explorer.view_selected();
-                                    }
-                                }
-                                crate::sftp_explorer::ActivePane::Remote => {
-                                    if clicked_idx < explorer.remote_entries.len() {
-                                        explorer.remote_selected = clicked_idx;
-                                        explorer.remote_table_state.select(Some(clicked_idx));
-                                        explorer.view_selected();
-                                    }
-                                }
+                            let clicked_idx = explorer.remote_table_state.offset() + rel_row;
+                            if clicked_idx < explorer.remote_entries.len() {
+                                explorer.remote_selected = clicked_idx;
+                                explorer.remote_table_state.select(Some(clicked_idx));
+                                explorer.open_context_menu_at(mouse.column, mouse.row);
                             }
                         }
+                    } else {
+                        explorer.open_context_menu_at(mouse.column, mouse.row);
                     }
                     return Ok(AppKeyAction::Ok);
                 }
@@ -1213,36 +1261,55 @@ impl App {
                         return Ok(AppKeyAction::Ok);
                     }
 
+                    // If Context menu is open, handle click on context menu
+                    if let Some(menu) = explorer.context_menu.clone() {
+                        let menu_w = 40u16;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let menu_h = (crate::sftp_explorer::CONTEXT_MENU_OPTIONS.len() as u16) + 2;
+                        let x = if menu.x + menu_w > width { width.saturating_sub(menu_w + 1) } else { menu.x };
+                        let y = if menu.y + menu_h > height { height.saturating_sub(menu_h + 1) } else { menu.y };
+
+                        if mouse.column >= x && mouse.column < x + menu_w && mouse.row > y && mouse.row <= y + (crate::sftp_explorer::CONTEXT_MENU_OPTIONS.len() as u16) {
+                            let clicked_opt = (mouse.row - (y + 1)) as usize;
+                            explorer.execute_context_menu_option(clicked_opt);
+                        } else {
+                            explorer.context_menu = None;
+                        }
+                        return Ok(AppKeyAction::Ok);
+                    }
+
                     // Check footer click
                     if mouse.row >= height.saturating_sub(3) {
                         let col_pct = (mouse.column as f32) / (width as f32);
-                        if col_pct < 0.15 {
+                        if col_pct < 0.12 {
                             explorer.switch_pane();
-                        } else if col_pct < 0.30 {
+                        } else if col_pct < 0.24 {
                             explorer.enter_directory();
-                        } else if col_pct < 0.42 {
+                        } else if col_pct < 0.35 {
                             explorer.view_selected();
-                        } else if col_pct < 0.55 {
+                        } else if col_pct < 0.48 {
                             explorer.copy_or_transfer();
-                        } else if col_pct < 0.68 {
+                        } else if col_pct < 0.60 {
                             explorer.mkdir_input = Some("new_folder".into());
-                        } else if col_pct < 0.80 {
+                        } else if col_pct < 0.72 {
                             explorer.delete_selected();
+                        } else if col_pct < 0.85 {
+                            explorer.open_context_menu_at(mouse.column, mouse.row.saturating_sub(10));
                         } else {
                             self.sftp_explorer = None;
                         }
                         return Ok(AppKeyAction::Ok);
                     }
 
-                    // Main dual panes click
+                    // Dual panes click
                     let is_left_pane = mouse.column < width / 2;
                     if is_left_pane {
                         explorer.active_pane = crate::sftp_explorer::ActivePane::Local;
-                        if mouse.row >= 4 && mouse.row < height.saturating_sub(4) {
-                            let clicked_idx = (mouse.row - 4) as usize;
+                        if mouse.row >= 5 && mouse.row < height.saturating_sub(3) {
+                            let rel_row = (mouse.row - 5) as usize;
+                            let clicked_idx = explorer.local_table_state.offset() + rel_row;
                             if clicked_idx < explorer.local_entries.len() {
                                 if explorer.local_selected == clicked_idx {
-                                    // Clicking already selected row enters directory
                                     explorer.enter_directory();
                                 } else {
                                     explorer.local_selected = clicked_idx;
@@ -1252,11 +1319,11 @@ impl App {
                         }
                     } else {
                         explorer.active_pane = crate::sftp_explorer::ActivePane::Remote;
-                        if mouse.row >= 4 && mouse.row < height.saturating_sub(4) {
-                            let clicked_idx = (mouse.row - 4) as usize;
+                        if mouse.row >= 5 && mouse.row < height.saturating_sub(3) {
+                            let rel_row = (mouse.row - 5) as usize;
+                            let clicked_idx = explorer.remote_table_state.offset() + rel_row;
                             if clicked_idx < explorer.remote_entries.len() {
                                 if explorer.remote_selected == clicked_idx {
-                                    // Clicking already selected row enters directory
                                     explorer.enter_directory();
                                 } else {
                                     explorer.remote_selected = clicked_idx;
@@ -1330,9 +1397,12 @@ impl App {
             MouseEventKind::Down(MouseButton::Right) => {
                 // Right click on table row selects and opens Details modal
                 let (banner_h, search_h) = self.get_layout_offsets(height);
-                let table_start = banner_h + search_h + 2; // header + border
-                if mouse.row >= table_start && mouse.row < height.saturating_sub(3) {
-                    let clicked_row = (mouse.row - table_start) as usize;
+                let table_top = banner_h + search_h;
+                let table_rows_start = table_top + 2; // header + border
+                let footer_start = height.saturating_sub(3);
+                if mouse.row >= table_rows_start && mouse.row < footer_start {
+                    let rel_row = (mouse.row - table_rows_start) as usize;
+                    let clicked_row = self.table_state.offset() + rel_row;
                     if clicked_row < self.hosts.len() {
                         self.table_state.select(Some(clicked_row));
                         self.show_details_modal = true;
@@ -1343,7 +1413,8 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 let (banner_h, search_h) = self.get_layout_offsets(height);
                 let search_start = banner_h;
-                let table_start = banner_h + search_h + 2;
+                let table_top = banner_h + search_h;
+                let table_rows_start = table_top + 2;
                 let footer_start = height.saturating_sub(3);
 
                 // Click on Search bar
@@ -1393,8 +1464,9 @@ impl App {
                 }
 
                 // Click on Host table row
-                if mouse.row >= table_start && mouse.row < footer_start {
-                    let clicked_row = (mouse.row - table_start) as usize;
+                if mouse.row >= table_rows_start && mouse.row < footer_start {
+                    let rel_row = (mouse.row - table_rows_start) as usize;
+                    let clicked_row = self.table_state.offset() + rel_row;
                     if clicked_row < self.hosts.len() {
                         let prev_selected = self.table_state.selected();
                         if prev_selected == Some(clicked_row) {

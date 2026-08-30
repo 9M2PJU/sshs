@@ -210,15 +210,23 @@ sshs --no-animate
 - **Port Knocking Sequence**: Send native TCP port knocking sequences (e.g. `7000, 8000, 9000`) before connecting to open protected firewalls.
 - **X11 GUI Forwarding (`-X` / `-Y`)**: Run remote graphical X11 Linux applications directly on your local display with compression support (<kbd>Ctrl+X</kbd> or <kbd>x</kbd> in Inspector).
 
-### 📂 Dual-Pane SFTP File Commander (Midnight Commander Style)
+### 📂 SSHS Explorer (Dual-Pane SFTP File Commander)
 
-`sshs` includes a built-in interactive **Dual-Pane SFTP File Commander** (<kbd>Ctrl+F</kbd> or <kbd>s</kbd> in Inspector) inspired by **Midnight Commander (`mc`)**:
+`sshs` includes a built-in interactive **SSHS Explorer** (<kbd>Ctrl+F</kbd> or <kbd>s</kbd> in Inspector):
 
 - **Dual-Pane View**: Local filesystem on the left pane and remote SSH/SFTP filesystem on the right pane.
+- **Right-Click Context Menu**: Right-click any file/folder or press <kbd>m</kbd> to open the interactive **Context Menu** popup with one-click actions:
+  1. `[1]` 👁 View File Preview (<kbd>F3</kbd> / <kbd>v</kbd>)
+  2. `[2]` 📤/📥 Transfer / Copy File (<kbd>F5</kbd> / <kbd>c</kbd>)
+  3. `[3]` 📁 Create New Directory (<kbd>F7</kbd>)
+  4. `[4]` 🗑 Delete File / Directory (<kbd>F8</kbd> / <kbd>d</kbd>)
+  5. `[5]` 🚀 Open in Dolphin / External (<kbd>F9</kbd> / <kbd>o</kbd>)
+  6. `[6]` 🔄 Refresh Directory Listing (<kbd>r</kbd>)
+  7. `[7]` ❌ Close Context Menu (<kbd>Esc</kbd>)
 - **Tabbed Pane Switching (<kbd>Tab</kbd>)**: Seamlessly toggle between local and remote file browsing.
 - **File Transfer & Sync (<kbd>F5</kbd> / <kbd>c</kbd>)**: One-key file transfer (Uploads when on local pane, Downloads when on remote pane).
 - **Fast File Preview (<kbd>F3</kbd> / <kbd>v</kbd>)**: View local or remote file contents in a rich TUI viewer popup.
-- **Directory Creation (<kbd>F7</kbd> / <kbd>m</kbd>)**: Create new folders remotely or locally with a quick modal.
+- **Directory Creation (<kbd>F7</kbd>)**: Create new folders remotely or locally with a quick modal.
 - **File Deletion (<kbd>F8</kbd> / <kbd>d</kbd> / <kbd>Delete</kbd>)**: Delete selected local or remote files/directories.
 - **External Integration (<kbd>F9</kbd> / <kbd>o</kbd>)**: Open current host directly in GUI file managers (e.g. Dolphin `sftp://...` on KDE) or Midnight Commander.
 
@@ -229,14 +237,14 @@ sshs --no-animate
 - **Left Click**:
   - **Host Table**: Click any row to select it; click again or double-click to connect immediately via SSH.
   - **Footer Buttons**: Click any interactive bottom toolbar button (`Connect`, `Details`, `SFTP`, `X11`, `Tunnel`, `Add`, `Del`, `Theme`, `Help`, `Quit`).
-  - **SFTP Explorer**: Click on Left or Right panes to switch focus and select files; double-click a folder to enter it.
+  - **SSHS Explorer**: Click on Left or Right panes to switch focus and select files; double-click a folder to enter it; click any Context Menu item.
   - **Modals**: Click modal action buttons (`[ Connect ]`, `[ Cancel ]`, `[ Delete ]`, `[ Mode 1-7 ]`).
 - **Right Click**:
   - **Host Table**: Right-click any host to open its **Host Details Inspector** modal instantly.
-  - **SFTP Explorer**: Right-click any file to open the **Fast File Viewer** popup.
+  - **SSHS Explorer**: Right-click any file/folder to open the interactive **Context Menu** popup.
   - **Modals**: Right-click anywhere in an open modal to dismiss/close it.
 - **Mouse Wheel / Scroll**:
-  - Scroll wheel up/down anywhere to navigate through hosts, dual-pane SFTP listings, and help menus.
+  - Scroll wheel up/down anywhere to navigate through hosts, dual-pane SSHS Explorer listings, and help menus.
 
 ### ⌨️ Keyboard Shortcuts & Controls
 
@@ -246,7 +254,7 @@ sshs --no-animate
 | <kbd>PageUp</kbd> / <kbd>PageDown</kbd> | Scroll one page up / down |
 | <kbd>Home</kbd> / <kbd>End</kbd> | Jump to top / bottom |
 | <kbd>Enter</kbd> | Connect to selected SSH host |
-| <kbd>Ctrl+F</kbd> | Open Dual-Pane SFTP File Commander (Midnight Commander style) |
+| <kbd>Ctrl+F</kbd> | Open SSHS Explorer (Dual-Pane SFTP File Commander) |
 | <kbd>Ctrl+X</kbd> | Launch X11 GUI forwarding session (`ssh -Y -C`) |
 | <kbd>Ctrl+L</kbd> / <kbd>Ctrl+P</kbd> | Open SSH Tunneling, TOR, Port Knocking & X11 Hub |
 | <kbd>Tab</kbd> | Open Host Details Inspector modal |

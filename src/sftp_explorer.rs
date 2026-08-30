@@ -33,6 +33,26 @@ pub enum ActivePane {
 }
 
 #[derive(Clone, Debug)]
+pub struct ContextMenu {
+    pub x: u16,
+    pub y: u16,
+    pub selected_index: usize,
+    pub item_name: String,
+    pub is_dir: bool,
+    pub pane: ActivePane,
+}
+
+pub const CONTEXT_MENU_OPTIONS: &[(&str, &str, &str)] = &[
+    ("1", "👁 View File Preview", "F3/v"),
+    ("2", "📤/📥 Transfer / Copy File", "F5/c"),
+    ("3", "📁 Create New Directory", "F7/m"),
+    ("4", "🗑 Delete File / Directory", "F8/d"),
+    ("5", "🚀 Open in Dolphin / External", "F9/o"),
+    ("6", "🔄 Refresh Directory Listing", "r"),
+    ("7", "❌ Close Context Menu", "Esc"),
+];
+
+#[derive(Clone, Debug)]
 pub struct SftpExplorer {
     pub host: Host,
     pub active_pane: ActivePane,
@@ -53,7 +73,7 @@ pub struct SftpExplorer {
     pub status_message: Option<(String, Instant)>,
     pub viewer_content: Option<(String, String)>, // (file_title, text_content)
     pub mkdir_input: Option<Input>,
-    pub confirm_delete: Option<String>,
+    pub context_menu: Option<ContextMenu>,
     pub is_loading: bool,
 }
 
@@ -77,7 +97,7 @@ impl SftpExplorer {
             status_message: None,
             viewer_content: None,
             mkdir_input: None,
-            confirm_delete: None,
+            context_menu: None,
             is_loading: false,
         };
 
@@ -331,7 +351,7 @@ impl SftpExplorer {
                         self.local_selected = 0;
                         self.refresh_local();
                     } else {
-                        self.set_status(format!("Selected local file: {}", entry.name));
+                        self.view_selected();
                     }
                 }
             }
@@ -355,7 +375,7 @@ impl SftpExplorer {
                         self.remote_selected = 0;
                         self.refresh_remote();
                     } else {
-                        self.set_status(format!("Selected remote file: {}", entry.name));
+                        self.view_selected();
                     }
                 }
             }
@@ -493,6 +513,9 @@ impl SftpExplorer {
         match self.active_pane {
             ActivePane::Local => {
                 if let Some(entry) = self.local_entries.get(self.local_selected) {
+                    if entry.name == ".." {
+                        return;
+                    }
                     if entry.is_dir {
                         self.enter_directory();
                         return;
@@ -508,6 +531,9 @@ impl SftpExplorer {
             }
             ActivePane::Remote => {
                 if let Some(entry) = self.remote_entries.get(self.remote_selected) {
+                    if entry.name == ".." {
+                        return;
+                    }
                     if entry.is_dir {
                         self.enter_directory();
                         return;
@@ -535,6 +561,20 @@ impl SftpExplorer {
                     }
                 }
             }
+        }
+    }
+
+    pub fn open_external(&mut self) {
+        let target_url = if let Some(u) = &self.host.user {
+            format!("sftp://{}@{}{}/", u, self.host.destination, if let Some(p) = &self.host.port { format!(":{p}") } else { String::new() })
+        } else {
+            format!("sftp://{}{}/", self.host.destination, if let Some(p) = &self.host.port { format!(":{p}") } else { String::new() })
+        };
+        if Command::new("which").arg("dolphin").status().map(|s| s.success()).unwrap_or(false) {
+            let _ = Command::new("dolphin").arg(&target_url).spawn();
+            self.set_status(format!("Opened '{target_url}' in Dolphin!"));
+        } else {
+            self.set_status(format!("SFTP target: {target_url}"));
         }
     }
 
@@ -581,6 +621,51 @@ impl SftpExplorer {
                 }
             }
         }
+    }
+
+    pub fn execute_context_menu_option(&mut self, option: usize) {
+        self.context_menu = None;
+        match option {
+            0 => self.view_selected(),
+            1 => self.copy_or_transfer(),
+            2 => self.mkdir_input = Some("new_folder".into()),
+            3 => self.delete_selected(),
+            4 => self.open_external(),
+            5 => {
+                self.refresh_local();
+                self.refresh_remote();
+                self.set_status("Refreshed directory listings".to_string());
+            }
+            _ => {}
+        }
+    }
+
+    pub fn open_context_menu_at(&mut self, x: u16, y: u16) {
+        let (item_name, is_dir) = match self.active_pane {
+            ActivePane::Local => {
+                if let Some(entry) = self.local_entries.get(self.local_selected) {
+                    (entry.name.clone(), entry.is_dir)
+                } else {
+                    (String::new(), false)
+                }
+            }
+            ActivePane::Remote => {
+                if let Some(entry) = self.remote_entries.get(self.remote_selected) {
+                    (entry.name.clone(), entry.is_dir)
+                } else {
+                    (String::new(), false)
+                }
+            }
+        };
+
+        self.context_menu = Some(ContextMenu {
+            x,
+            y,
+            selected_index: 0,
+            item_name,
+            is_dir,
+            pane: self.active_pane,
+        });
     }
 }
 
@@ -671,7 +756,7 @@ pub fn render_sftp_explorer(
     let local_path_str = explorer.local_path.to_string_lossy();
     let remote_path_str = &explorer.remote_path;
     let header_line = Line::from(vec![
-        Span::styled(" 📂 Dual-Pane SFTP File Commander ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+        Span::styled(" 📂 SSHS Explorer ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
         Span::styled(format!(" [ Host: {} ] ", explorer.host.name), theme.badge_style()),
         Span::raw("  "),
         Span::styled("Local: ", Style::default().fg(theme.muted)),
@@ -686,7 +771,7 @@ pub fn render_sftp_explorer(
             .borders(Borders::ALL)
             .border_style(theme.border_style())
             .border_type(BorderType::Rounded)
-            .title(Line::from(Span::styled(" Midnight SFTP Explorer ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)))),
+            .title(Line::from(Span::styled(" SSHS Explorer ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)))),
     );
     f.render_widget(header_widget, chunks[0]);
 
@@ -721,7 +806,7 @@ pub fn render_sftp_explorer(
         pane_chunks[1],
     );
 
-    // 3. Footer with Midnight Commander style Function Bar
+    // 3. Footer with Function Bar
     let is_recent_status = if let Some((msg, timestamp)) = &explorer.status_message {
         if timestamp.elapsed().as_secs() < 3 {
             Some(msg.clone())
@@ -751,6 +836,8 @@ pub fn render_sftp_explorer(
             Span::styled(" Mkdir ", theme.key_desc_style()),
             Span::styled(" F8/d ", theme.key_badge_style()),
             Span::styled(" Delete ", theme.key_desc_style()),
+            Span::styled(" Right-Click ", theme.key_badge_style()),
+            Span::styled(" Menu ", theme.key_desc_style()),
             Span::styled(" Esc/q ", theme.key_badge_style()),
             Span::styled(" Close ", theme.key_desc_style()),
         ])
@@ -764,12 +851,75 @@ pub fn render_sftp_explorer(
     );
     f.render_widget(footer_widget, chunks[2]);
 
-    // Render Popups if active (Viewer, Mkdir, Delete confirmation)
+    // Render Popups if active (Viewer, Mkdir, Context Menu)
     if let Some((title, text)) = &explorer.viewer_content {
         render_viewer_popup(f, theme, title, text);
     } else if let Some(input) = &explorer.mkdir_input {
         render_mkdir_popup(f, theme, input);
+    } else if let Some(menu) = &explorer.context_menu {
+        render_context_menu(f, theme, menu);
     }
+}
+
+fn render_context_menu(f: &mut Frame, theme: &Theme, menu: &ContextMenu) {
+    let menu_width = 40u16;
+    #[allow(clippy::cast_possible_truncation)]
+    let menu_height = (CONTEXT_MENU_OPTIONS.len() as u16) + 2;
+
+    let area = f.area();
+    let x = if menu.x + menu_width > area.width {
+        area.width.saturating_sub(menu_width + 1)
+    } else {
+        menu.x
+    };
+    let y = if menu.y + menu_height > area.height {
+        area.height.saturating_sub(menu_height + 1)
+    } else {
+        menu.y
+    };
+
+    let rect = Rect::new(x, y, menu_width, menu_height);
+    f.render_widget(Clear, rect);
+
+    let mut lines = Vec::new();
+    for (idx, (key, label, shortcut)) in CONTEXT_MENU_OPTIONS.iter().enumerate() {
+        let is_selected = idx == menu.selected_index;
+        let prefix = if is_selected { " ❯ " } else { "   " };
+        let line_style = if is_selected {
+            Style::default().fg(theme.selected_fg).bg(theme.primary).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.header_fg)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(prefix, if is_selected { Style::default().fg(theme.primary).add_modifier(Modifier::BOLD) } else { Style::default() }),
+            Span::styled(format!("[{key}] "), theme.key_badge_style()),
+            Span::styled(format!("{label:<24}"), line_style),
+            Span::styled(format!(" {shortcut}"), Style::default().fg(theme.muted)),
+        ]));
+    }
+
+    let title = if menu.item_name.is_empty() {
+        " 📋 SSHS Context Menu ".to_string()
+    } else if menu.item_name.len() > 18 {
+        format!(" 📋 {}... ", &menu.item_name[..15])
+    } else {
+        format!(" 📋 {} ", menu.item_name)
+    };
+
+    let widget = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double)
+            .border_style(theme.active_border_style())
+            .title(Line::from(Span::styled(
+                title,
+                Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+            )))
+            .title(Line::from(Span::styled(" [ 1-7 / Enter / Esc ] ", theme.badge_style())).alignment(Alignment::Right)),
+    );
+
+    f.render_widget(widget, rect);
 }
 
 #[allow(clippy::too_many_arguments)]
