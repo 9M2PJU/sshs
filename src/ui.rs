@@ -313,6 +313,14 @@ impl App {
 
         // 0. SSHS Explorer View (Dual-Pane TUI)
         if let Some(explorer) = &mut self.sftp_explorer {
+            if explorer.active_transfer.is_some() {
+                if key.code == Esc || key.code == Char('q') {
+                    explorer.active_transfer = None;
+                    explorer.set_status("Transfer cancelled by user".to_string());
+                }
+                return Ok(AppKeyAction::Ok);
+            }
+
             if explorer.viewer_content.is_some() {
                 match key.code {
                     Esc | Char('q') | Enter => {
@@ -1672,7 +1680,8 @@ where
 
 fn ui(f: &mut Frame, app: &mut App) {
     if let Some(explorer) = &mut app.sftp_explorer {
-        crate::sftp_explorer::render_sftp_explorer(f, &app.theme, explorer);
+        explorer.check_active_transfer();
+        crate::sftp_explorer::render_sftp_explorer(f, &app.theme, explorer, app.anim_tick);
         return;
     }
 

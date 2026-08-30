@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, TableState},
+    widgets::{Block, BorderType, Borders, Cell, Clear, Gauge, Paragraph, Row, Table, TableState},
     Frame,
 };
 use std::{
@@ -10,11 +10,29 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::{Arc, Mutex},
+    thread,
     time::{Instant, UNIX_EPOCH},
 };
 use tui_input::Input;
 
 use crate::{ssh::Host, theme::Theme};
+
+#[derive(Clone, Debug)]
+pub struct ActiveTransfer {
+    pub name: String,
+    pub is_upload: bool,
+    pub src_path: String,
+    pub dst_path: String,
+    pub total_bytes: u64,
+    pub bytes_transferred: u64,
+    pub percentage: u8,
+    pub speed: String,
+    pub transferred_display: String,
+    pub is_complete: bool,
+    pub error: Option<String>,
+    pub start_time: Instant,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileEntry {
@@ -74,7 +92,26 @@ pub struct SftpExplorer {
     pub viewer_content: Option<(String, String)>, // (file_title, text_content)
     pub mkdir_input: Option<Input>,
     pub context_menu: Option<ContextMenu>,
+    pub active_transfer: Option<Arc<Mutex<ActiveTransfer>>>,
     pub is_loading: bool,
+}
+
+fn get_dir_size(path: &Path) -> u64 {
+    if let Ok(meta) = fs::symlink_metadata(path) {
+        if meta.is_file() {
+            return meta.len();
+        }
+        if meta.is_dir() {
+            let mut size = 0;
+            if let Ok(entries) = fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    size += get_dir_size(&entry.path());
+                }
+            }
+            return size;
+        }
+    }
+    0
 }
 
 impl SftpExplorer {
@@ -98,6 +135,7 @@ impl SftpExplorer {
             viewer_content: None,
             mkdir_input: None,
             context_menu: None,
+            active_transfer: None,
             is_loading: false,
         };
 
@@ -416,10 +454,71 @@ impl SftpExplorer {
         }
     }
 
+    pub fn check_active_transfer(&mut self) {
+        if let Some(transfer_arc) = self.active_transfer.clone() {
+            if let Ok(mut state) = transfer_arc.lock() {
+                if state.is_complete {
+                    let is_upload = state.is_upload;
+                    let name = state.name.clone();
+                    let speed = state.speed.clone();
+                    let elapsed = state.start_time.elapsed().as_secs();
+                    self.set_status(format!("✨ Transferred '{name}' ({speed}, {elapsed}s) successfully!"));
+                    self.active_transfer = None;
+                    if is_upload {
+                        self.refresh_remote();
+                    } else {
+                        self.refresh_local();
+                    }
+                } else if let Some(err) = state.error.take() {
+                    self.set_status(format!("Transfer error: {err}"));
+                    self.active_transfer = None;
+                } else {
+                    // Update live progress estimation
+                    let elapsed = state.start_time.elapsed().as_secs_f64().max(0.1);
+                    if state.total_bytes > 0 {
+                        if !state.is_upload {
+                            let dst_local = Path::new(&state.dst_path).join(&state.name);
+                            let current_size = if dst_local.is_dir() {
+                                get_dir_size(&dst_local)
+                            } else {
+                                fs::metadata(&dst_local).map(|m| m.len()).unwrap_or(0)
+                            };
+                            state.bytes_transferred = current_size;
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let pct = ((current_size as f64 / state.total_bytes as f64) * 100.0).min(99.0) as u8;
+                            state.percentage = pct.max(state.percentage).max(5);
+                            state.transferred_display = format!("{}/{}", format_bytes(current_size), format_bytes(state.total_bytes));
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let bps = (current_size as f64) / elapsed;
+                            state.speed = format!("{}/s", format_bytes(bps as u64));
+                        } else {
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let pct = ((elapsed * 18.0).min(92.0)) as u8;
+                            state.percentage = pct.max(state.percentage).max(5);
+                            state.transferred_display = format_bytes(state.total_bytes);
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let bps = (state.total_bytes as f64) / elapsed;
+                            state.speed = format!("{}/s", format_bytes(bps as u64));
+                        }
+                    } else {
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let pct = ((elapsed * 25.0).min(92.0)) as u8;
+                        state.percentage = pct.max(state.percentage).max(5);
+                        state.transferred_display = "In progress...".to_string();
+                    }
+                }
+            }
+        }
+    }
+
     pub fn copy_or_transfer(&mut self) {
-        match self.active_pane {
+        if self.active_transfer.is_some() {
+            self.set_status("A transfer is already in progress...".to_string());
+            return;
+        }
+
+        let transfer_info = match self.active_pane {
             ActivePane::Local => {
-                // Upload local to remote
                 let Some(entry) = self.local_entries.get(self.local_selected).cloned() else {
                     return;
                 };
@@ -432,46 +531,10 @@ impl SftpExplorer {
                 } else {
                     format!("{}:{}/", self.host.name, self.remote_path)
                 };
-                let local_str = local_file.to_string_lossy().into_owned();
-
-                let mut cmd = Command::new("scp");
-                cmd.arg("-r");
-                cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
-                cmd.arg("-o").arg("ConnectTimeout=10");
-                if let Some(p) = &self.host.port {
-                    if !p.is_empty() && p != "22" {
-                        cmd.arg("-P").arg(p);
-                    }
-                }
-                if let Some(i) = &self.host.identity_file {
-                    if !i.is_empty() {
-                        cmd.arg("-i").arg(i);
-                    }
-                }
-                cmd.arg(&local_str);
-                cmd.arg(&remote_target);
-
-                self.set_status(format!("Uploading '{}'...", entry.name));
-                match cmd.output() {
-                    Ok(output) if output.status.success() => {
-                        self.set_status(format!("Uploaded '{}' successfully!", entry.name));
-                        self.refresh_remote();
-                    }
-                    Ok(output) => {
-                        let err = String::from_utf8_lossy(&output.stderr);
-                        let clean_err = err
-                            .lines()
-                            .filter(|l| !l.starts_with("** WARNING"))
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        let msg = if clean_err.is_empty() { "Upload failed" } else { &clean_err };
-                        self.set_status(format!("Upload error: {msg}"));
-                    }
-                    Err(e) => self.set_status(format!("Upload error: {e}")),
-                }
+                let total_size = if entry.is_dir { get_dir_size(&local_file) } else { entry.size };
+                (true, entry.name, local_file.to_string_lossy().into_owned(), remote_target, total_size)
             }
             ActivePane::Remote => {
-                // Download remote to local
                 let Some(entry) = self.remote_entries.get(self.remote_selected).cloned() else {
                     return;
                 };
@@ -484,44 +547,80 @@ impl SftpExplorer {
                     format!("{}:{}/{}", self.host.name, self.remote_path, entry.name)
                 };
                 let local_target = format!("{}/", self.local_path.to_string_lossy());
+                (false, entry.name, remote_src, local_target, entry.size)
+            }
+        };
 
-                let mut cmd = Command::new("scp");
-                cmd.arg("-r");
-                cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
-                cmd.arg("-o").arg("ConnectTimeout=10");
-                if let Some(p) = &self.host.port {
-                    if !p.is_empty() && p != "22" {
-                        cmd.arg("-P").arg(p);
-                    }
-                }
-                if let Some(i) = &self.host.identity_file {
-                    if !i.is_empty() {
-                        cmd.arg("-i").arg(i);
-                    }
-                }
-                cmd.arg(&remote_src);
-                cmd.arg(&local_target);
+        let (is_upload, name, src, dst, total_size) = transfer_info;
+        let transfer_state = Arc::new(Mutex::new(ActiveTransfer {
+            name: name.clone(),
+            is_upload,
+            src_path: src.clone(),
+            dst_path: dst.clone(),
+            total_bytes: total_size,
+            bytes_transferred: 0,
+            percentage: 5,
+            speed: "-- KB/s".to_string(),
+            transferred_display: format_bytes(total_size),
+            is_complete: false,
+            error: None,
+            start_time: Instant::now(),
+        }));
 
-                self.set_status(format!("Downloading '{}'...", entry.name));
-                match cmd.output() {
-                    Ok(output) if output.status.success() => {
-                        self.set_status(format!("Downloaded '{}' successfully!", entry.name));
-                        self.refresh_local();
-                    }
-                    Ok(output) => {
-                        let err = String::from_utf8_lossy(&output.stderr);
-                        let clean_err = err
-                            .lines()
-                            .filter(|l| !l.starts_with("** WARNING"))
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        let msg = if clean_err.is_empty() { "Download failed" } else { &clean_err };
-                        self.set_status(format!("Download error: {msg}"));
-                    }
-                    Err(e) => self.set_status(format!("Download error: {e}")),
+        self.active_transfer = Some(transfer_state.clone());
+        self.set_status(format!("Transferring '{}'...", name));
+
+        let host = self.host.clone();
+        thread::spawn(move || {
+            let mut cmd = Command::new("scp");
+            cmd.arg("-r");
+            cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
+            cmd.arg("-o").arg("ConnectTimeout=15");
+            if let Some(p) = &host.port {
+                if !p.is_empty() && p != "22" {
+                    cmd.arg("-P").arg(p);
                 }
             }
-        }
+            if let Some(i) = &host.identity_file {
+                if !i.is_empty() {
+                    cmd.arg("-i").arg(i);
+                }
+            }
+            cmd.arg(&src);
+            cmd.arg(&dst);
+
+            match cmd.output() {
+                Ok(output) if output.status.success() => {
+                    if let Ok(mut state) = transfer_state.lock() {
+                        state.percentage = 100;
+                        state.bytes_transferred = state.total_bytes;
+                        state.transferred_display = format_bytes(state.total_bytes);
+                        let elapsed = state.start_time.elapsed().as_secs_f64().max(0.1);
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let bps = (state.total_bytes as f64) / elapsed;
+                        state.speed = format!("{}/s", format_bytes(bps as u64));
+                        state.is_complete = true;
+                    }
+                }
+                Ok(output) => {
+                    let err = String::from_utf8_lossy(&output.stderr);
+                    let clean_err = err
+                        .lines()
+                        .filter(|l| !l.starts_with("** WARNING"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let msg = if clean_err.is_empty() { "Transfer failed".to_string() } else { clean_err };
+                    if let Ok(mut state) = transfer_state.lock() {
+                        state.error = Some(msg);
+                    }
+                }
+                Err(e) => {
+                    if let Ok(mut state) = transfer_state.lock() {
+                        state.error = Some(format!("Execution error: {e}"));
+                    }
+                }
+            }
+        });
     }
 
     pub fn delete_selected(&mut self) {
@@ -849,6 +948,7 @@ pub fn render_sftp_explorer(
     f: &mut Frame,
     theme: &Theme,
     explorer: &mut SftpExplorer,
+    anim_tick: u64,
 ) {
     let area = f.area();
     f.render_widget(Clear, area);
@@ -960,8 +1060,12 @@ pub fn render_sftp_explorer(
     );
     f.render_widget(footer_widget, chunks[2]);
 
-    // Render Popups if active (Viewer, Mkdir, Context Menu)
-    if let Some((title, text)) = &explorer.viewer_content {
+    // Render Popups if active (Transfer Progress, Viewer, Mkdir, Context Menu)
+    if let Some(transfer_arc) = &explorer.active_transfer {
+        if let Ok(state) = transfer_arc.lock() {
+            render_transfer_popup(f, theme, &state, anim_tick);
+        }
+    } else if let Some((title, text)) = &explorer.viewer_content {
         render_viewer_popup(f, theme, title, text);
     } else if let Some(input) = &explorer.mkdir_input {
         render_mkdir_popup(f, theme, input);
@@ -1215,6 +1319,82 @@ fn render_mkdir_popup(f: &mut Frame, theme: &Theme, input: &Input) {
     );
 
     f.render_widget(widget, area);
+}
+
+fn render_transfer_popup(f: &mut Frame, theme: &Theme, transfer: &ActiveTransfer, anim_tick: u64) {
+    let area = centered_rect(68, 25, f.area());
+    f.render_widget(Clear, area);
+
+    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    #[allow(clippy::cast_possible_truncation)]
+    let spinner = frames[(anim_tick as usize) % frames.len()];
+
+    let elapsed = transfer.start_time.elapsed();
+    let title = format!(
+        " {} {} ",
+        if transfer.is_upload { "📤 Uploading" } else { "📥 Downloading" },
+        if transfer.name.len() > 28 { format!("{}...", &transfer.name[..25]) } else { transfer.name.clone() }
+    );
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(theme.active_border_style())
+        .title(Line::from(Span::styled(
+            title,
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+        )))
+        .title(Line::from(Span::styled(" [Esc to Cancel] ", theme.badge_style())).alignment(Alignment::Right));
+
+    let inner = modal_block.inner(area);
+    f.render_widget(modal_block, area);
+
+    let chunks = Layout::vertical([
+        Constraint::Length(1), // Spacing
+        Constraint::Length(1), // Source
+        Constraint::Length(1), // Destination
+        Constraint::Length(1), // Spacing
+        Constraint::Length(1), // Gauge progress bar
+        Constraint::Length(1), // Spacing
+        Constraint::Length(1), // Stats line
+    ])
+    .split(inner);
+
+    let src_short = if transfer.src_path.len() > 40 {
+        format!("..{}", &transfer.src_path[transfer.src_path.len().saturating_sub(38)..])
+    } else {
+        transfer.src_path.clone()
+    };
+
+    let dst_short = if transfer.dst_path.len() > 40 {
+        format!("..{}", &transfer.dst_path[transfer.dst_path.len().saturating_sub(38)..])
+    } else {
+        transfer.dst_path.clone()
+    };
+
+    let src_line = Line::from(vec![
+        Span::styled("  Source:      ", Style::default().fg(theme.muted)),
+        Span::styled(src_short, Style::default().fg(theme.header_fg).add_modifier(Modifier::BOLD)),
+    ]);
+    f.render_widget(Paragraph::new(src_line), chunks[1]);
+
+    let dst_line = Line::from(vec![
+        Span::styled("  Destination: ", Style::default().fg(theme.muted)),
+        Span::styled(dst_short, Style::default().fg(theme.destination).add_modifier(Modifier::BOLD)),
+    ]);
+    f.render_widget(Paragraph::new(dst_line), chunks[2]);
+
+    let gauge = Gauge::default()
+        .gauge_style(Style::default().fg(theme.primary).bg(theme.border).add_modifier(Modifier::BOLD))
+        .percent(u16::from(transfer.percentage))
+        .label(format!("{} {}% ({})", spinner, transfer.percentage, transfer.transferred_display));
+    f.render_widget(gauge, chunks[4]);
+
+    let stats_line = Line::from(vec![
+        Span::styled(format!("   ⚡ Speed: {:<14}", transfer.speed), Style::default().fg(theme.accent)),
+        Span::styled(format!("  ⏱ Elapsed: {:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60), Style::default().fg(theme.muted)),
+    ]);
+    f.render_widget(Paragraph::new(stats_line), chunks[6]);
 }
 
 #[cfg(test)]
