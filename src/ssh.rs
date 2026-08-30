@@ -16,6 +16,8 @@ pub struct Host {
     pub destination: String,
     pub port: Option<String>,
     pub proxy_command: Option<String>,
+    pub identity_file: Option<String>,
+    pub proxy_jump: Option<String>,
 }
 
 impl SearchableItem for Host {
@@ -126,6 +128,8 @@ pub fn parse_config(raw_path: &String) -> Result<Vec<Host>, ParseConfigError> {
                 user: host.get(&ssh_config::EntryType::User),
                 port: host.get(&ssh_config::EntryType::Port),
                 proxy_command: host.get(&ssh_config::EntryType::ProxyCommand),
+                identity_file: host.get(&ssh_config::EntryType::IdentityFile),
+                proxy_jump: host.get(&ssh_config::EntryType::ProxyJump),
                 name,
                 destination,
             }

@@ -4,13 +4,25 @@
     <img src="https://repology.org/badge/vertical-allrepos/sshs.svg" alt="Packaging status" align="right">
 </a>
 
-Terminal user interface for SSH.  
-It uses `~/.ssh/config` to list and connect to hosts.
+Terminal user interface for SSH with vibrant color themes, fancy ASCII art banners, and host inspection.  
+It uses `~/.ssh/config` to list, search, inspect, and connect to hosts.
 
 <br>
+
+![screenshot](.github/demo/screenshot.png)
+
 <br>
 
 ![example](.github/demo/demo.gif)
+
+## Features
+
+- 🎨 **Rich Modern Color Themes**: Catppuccin, Tokyo Night, Dracula, Nord, Gruvbox, Rosé Pine, One Dark, Kanagawa, Everforest, Solarized, Cyberpunk, Synthwave, Matrix, and all 22 Tailwind palettes.
+- ✨ **Fancy ASCII Art Banners**: Stylish RGB gradient ASCII art headers (`slant`, `cyber`, `standard`, `mini`, `off`) with automatic responsive scaling.
+- ⚙️ **Persistent Preferences**: Easily set your default theme via `~/.config/sshs/config.toml`, `SSHS_THEME` environment variable, or in-app <kbd>Ctrl+S</kbd>.
+- 🖥 **Host Details Inspector**: Press <kbd>Tab</kbd> to inspect complete host details, identity files, proxy jump settings, and command preview.
+- 🔍 **Instant Fuzzy Search**: Multi-token search filters across names, aliases, and destinations.
+- ❓ **Interactive Help Modal**: Press <kbd>?</kbd> or <kbd>F1</kbd> for quick keybindings and shortcuts.
 
 ## Requirements
 
@@ -32,7 +44,7 @@ Thanks to [Jakub Levý](https://github.com/jakublevy/chocopkgs/tree/master/sshs)
 choco install sshs
 ```
 
-### Arch Linux
+### Arch Linux / CachyOS
 
 ```shell
 pacman -S sshs
@@ -106,6 +118,87 @@ cargo build --release
 ```
 
 The binary will be located at `./target/release/sshs` once the build is complete.
+
+## Configuration & Customization
+
+### 🎨 Themes & Colors
+
+`sshs` includes modern curated color themes as well as support for all 22 Tailwind color palettes.
+
+You can select a theme on startup using `--theme` (or `--color`):
+
+```shell
+# Curated Themes: catppuccin, catppuccin-latte, dracula, tokyonight, nord, gruvbox,
+#                 rose-pine, onedark, kanagawa, everforest, solarized-dark, ayu-dark,
+#                 cyberpunk, synthwave, matrix, hacker-amber, sunset, monokai, ocean, crimson, lavender
+sshs --theme catppuccin
+sshs --theme tokyonight
+sshs --theme dracula
+sshs --theme rose-pine
+sshs --theme cyberpunk
+sshs --theme matrix
+
+# Or Tailwind Color Palettes (blue, emerald, rose, violet, amber, cyan, etc.):
+sshs --color emerald
+```
+
+> **Tip:** You can dynamically cycle through themes inside the app anytime by pressing <kbd>Ctrl+T</kbd> or <kbd>F2</kbd>, and press <kbd>Ctrl+S</kbd> to save it as your default!
+
+### ⚙️ Setting Your Default Theme & Preferences
+
+You can set your default theme and preferences in three convenient ways:
+
+#### 1. Configuration File (`~/.config/sshs/config.toml`)
+Create or edit `~/.config/sshs/config.toml`:
+
+```toml
+theme = "tokyonight"          # Default theme
+ascii_art = "cyber"           # Default banner: slant, cyber, standard, mini, off
+# sort = true
+# show_proxy_command = false
+```
+
+#### 2. In-App Keybinding (<kbd>Ctrl+S</kbd>)
+Press <kbd>Ctrl+T</kbd> / <kbd>F2</kbd> to cycle to any theme you like, then press **<kbd>Ctrl+S</kbd>** to automatically save it as your default in `~/.config/sshs/config.toml`.
+
+#### 3. Environment Variable (`SSHS_THEME`)
+Set `SSHS_THEME` in your shell configuration (`~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`):
+
+```shell
+export SSHS_THEME="tokyonight"
+export SSHS_ASCII_ART="cyber"
+```
+
+### ✨ Fancy ASCII Art Banners
+
+Add stylish ASCII art headers with smooth RGB gradients:
+
+```shell
+# Available styles: slant (default), cyber, standard, mini, off
+sshs --ascii-art slant
+sshs --ascii-art cyber
+sshs --ascii-art standard
+sshs --ascii-art mini
+
+# Disable ASCII art banner for minimal view
+sshs --no-ascii-art
+```
+
+### ⌨️ Keyboard Shortcuts & Controls
+
+| Key | Action |
+| --- | --- |
+| <kbd>↑</kbd> / <kbd>↓</kbd>, <kbd>k</kbd> / <kbd>j</kbd> | Move selection up / down |
+| <kbd>PageUp</kbd> / <kbd>PageDown</kbd> | Scroll one page up / down |
+| <kbd>Home</kbd> / <kbd>End</kbd> | Jump to top / bottom |
+| <kbd>Enter</kbd> | Connect to selected SSH host |
+| <kbd>Tab</kbd> | Open Host Details Inspector modal |
+| <kbd>Ctrl+T</kbd> / <kbd>F2</kbd> | Cycle visual theme |
+| <kbd>Ctrl+S</kbd> | Save current theme to `~/.config/sshs/config.toml` |
+| <kbd>Ctrl+R</kbd> | Reload SSH configuration files |
+| <kbd>Ctrl+U</kbd> | Clear search query |
+| <kbd>?</kbd> / <kbd>F1</kbd> / <kbd>Ctrl+H</kbd> | Open Help modal |
+| <kbd>Esc</kbd> | Clear search or quit |
 
 ## Troubleshooting
 

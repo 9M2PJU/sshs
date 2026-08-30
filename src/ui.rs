@@ -12,24 +12,28 @@ use std::{
     cmp::{max, min},
     io,
     rc::Rc,
+    time::{Duration, Instant},
 };
-use style::palette::tailwind;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{searchable::Searchable, ssh};
+use crate::{
+    ascii_art::{self, AsciiArtStyle},
+    searchable::Searchable,
+    ssh,
+    theme::{self, Theme},
+};
 
-const INFO_TEXT: &str =
-    "(Esc) quit | (↑) move up | (↓) move down | (enter) select | (ctrl+r) reload";
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct AppConfig {
     pub config_paths: Vec<String>,
 
     pub search_filter: Option<String>,
     pub color: String,
+    pub ascii_art: String,
+    pub no_ascii_art: bool,
     pub sort_by_name: bool,
     pub sort_by_score: bool,
     pub show_proxy_command: bool,
@@ -50,7 +54,11 @@ pub struct App {
     table_columns_constraints: Vec<Constraint>,
     page_step: usize,
 
-    palette: tailwind::Palette,
+    theme: Theme,
+    ascii_art_style: AsciiArtStyle,
+    show_details_modal: bool,
+    show_help_modal: bool,
+    status_message: Option<(String, Instant)>,
 }
 
 #[derive(PartialEq)]
@@ -66,8 +74,13 @@ impl App {
     /// Will return `Err` if the SSH configuration file cannot be parsed.
     pub fn new(config: &AppConfig) -> Result<App> {
         let hosts = load_hosts(config)?;
-
         let search_input = config.search_filter.clone().unwrap_or_default();
+        let current_theme = theme::theme_by_name(&config.color)?;
+        let ascii_style = if config.no_ascii_art {
+            AsciiArtStyle::Off
+        } else {
+            config.ascii_art.parse().unwrap_or(AsciiArtStyle::Slant)
+        };
 
         let mut app = App {
             config: config.clone(),
@@ -77,7 +90,12 @@ impl App {
             table_state: TableState::default().with_selected(0),
             table_columns_constraints: Vec::new(),
             page_step: 21,
-            palette: palette_by_name(&config.color)?,
+
+            theme: current_theme,
+            ascii_art_style: ascii_style,
+            show_details_modal: false,
+            show_help_modal: false,
+            status_message: None,
 
             hosts: Searchable::new(config.sort_by_score, hosts, &search_input),
         };
@@ -128,7 +146,9 @@ impl App {
                     }
                 }
 
-                self.handle_search_event(&ev);
+                if !self.show_help_modal && !self.show_details_modal {
+                    self.handle_search_event(&ev);
+                }
             }
         }
 
@@ -156,8 +176,78 @@ impl App {
             }
         }
 
+        // Handle active modals first
+        if self.show_help_modal {
+            match key.code {
+                Esc | Char('?' | 'q') | Enter => {
+                    self.show_help_modal = false;
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => return Ok(AppKeyAction::Ok),
+            }
+        }
+
+        if self.show_details_modal {
+            match key.code {
+                Esc | Tab | Char('q') => {
+                    self.show_details_modal = false;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Down => {
+                    self.next();
+                    return Ok(AppKeyAction::Ok);
+                }
+                Up => {
+                    self.previous();
+                    return Ok(AppKeyAction::Ok);
+                }
+                PageDown => {
+                    let i = self.table_state.selected().unwrap_or(0);
+                    let target = min(
+                        i.saturating_add(self.page_step),
+                        self.hosts.len().saturating_sub(1),
+                    );
+                    self.table_state.select(Some(target));
+                    return Ok(AppKeyAction::Ok);
+                }
+                PageUp => {
+                    let i = self.table_state.selected().unwrap_or(0);
+                    let target = max(i.saturating_sub(self.page_step), 0);
+                    self.table_state.select(Some(target));
+                    return Ok(AppKeyAction::Ok);
+                }
+                Enter => {
+                    self.show_details_modal = false;
+                    return self.connect_to_selected_host(terminal);
+                }
+                _ => return Ok(AppKeyAction::Ok),
+            }
+        }
+
         match key.code {
-            Esc => return Ok(AppKeyAction::Stop),
+            Esc => {
+                if !self.search.value().is_empty() {
+                    self.search = Input::default();
+                    self.hosts.search("");
+                    self.table_state.select(Some(0));
+                    return Ok(AppKeyAction::Ok);
+                }
+                return Ok(AppKeyAction::Stop);
+            }
+            Tab => {
+                if !self.hosts.is_empty() {
+                    self.show_details_modal = true;
+                }
+                return Ok(AppKeyAction::Ok);
+            }
+            F(1) => {
+                self.show_help_modal = true;
+                return Ok(AppKeyAction::Ok);
+            }
+            F(2) => {
+                self.cycle_theme();
+                return Ok(AppKeyAction::Ok);
+            }
             Down => self.next(),
             Up => self.previous(),
             Home => self.table_state.select(Some(0)),
@@ -180,32 +270,45 @@ impl App {
                 self.table_state.select(Some(target));
             }
             Enter => {
-                let selected = self.table_state.selected().unwrap_or(0);
-                if selected >= self.hosts.len() {
-                    return Ok(AppKeyAction::Ok);
-                }
-
-                let host: &ssh::Host = &self.hosts[selected];
-
-                restore_terminal(terminal).expect("Failed to restore terminal");
-
-                if let Some(template) = &self.config.command_template_on_session_start {
-                    host.spawn_command_template(template)?;
-                }
-
-                host.spawn_command_template(&self.config.command_template)?;
-
-                if let Some(template) = &self.config.command_template_on_session_end {
-                    host.spawn_command_template(template)?;
-                }
-
-                setup_terminal(terminal).expect("Failed to setup terminal");
-
-                if self.config.exit_after_ssh_session_ends {
-                    return Ok(AppKeyAction::Stop);
-                }
+                return self.connect_to_selected_host(terminal);
             }
             _ => return Ok(AppKeyAction::Continue),
+        }
+
+        Ok(AppKeyAction::Ok)
+    }
+
+    fn connect_to_selected_host<B>(
+        &mut self,
+        terminal: &Rc<RefCell<Terminal<B>>>,
+    ) -> Result<AppKeyAction>
+    where
+        B: Backend + std::io::Write,
+        <B as Backend>::Error: Send + Sync + 'static,
+    {
+        let selected = self.table_state.selected().unwrap_or(0);
+        if selected >= self.hosts.len() {
+            return Ok(AppKeyAction::Ok);
+        }
+
+        let host: &ssh::Host = &self.hosts[selected];
+
+        restore_terminal(terminal).expect("Failed to restore terminal");
+
+        if let Some(template) = &self.config.command_template_on_session_start {
+            host.spawn_command_template(template)?;
+        }
+
+        host.spawn_command_template(&self.config.command_template)?;
+
+        if let Some(template) = &self.config.command_template_on_session_end {
+            host.spawn_command_template(template)?;
+        }
+
+        setup_terminal(terminal).expect("Failed to setup terminal");
+
+        if self.config.exit_after_ssh_session_ends {
+            return Ok(AppKeyAction::Stop);
         }
 
         Ok(AppKeyAction::Ok)
@@ -217,6 +320,28 @@ impl App {
 
         match key.code {
             Char('c') => AppKeyAction::Stop,
+            Char('t') => {
+                self.cycle_theme();
+                AppKeyAction::Ok
+            }
+            Char('s') => {
+                if let Err(e) = crate::config::save_user_theme(self.theme.name) {
+                    self.set_status_message(format!("Error saving theme: {e}"));
+                } else {
+                    self.set_status_message(format!("Saved '{}' as default in ~/.config/sshs/config.toml!", self.theme.display_name));
+                }
+                AppKeyAction::Ok
+            }
+            Char('h') => {
+                self.show_help_modal = !self.show_help_modal;
+                AppKeyAction::Ok
+            }
+            Char('u') => {
+                self.search = Input::default();
+                self.hosts.search("");
+                self.table_state.select(Some(0));
+                AppKeyAction::Ok
+            }
             Char('j' | 'n') => {
                 self.next();
                 AppKeyAction::Ok
@@ -227,19 +352,25 @@ impl App {
             }
             Char('r') => {
                 self.reload_hosts();
+                self.set_status_message("SSH config reloaded".to_string());
                 AppKeyAction::Ok
             }
             _ => AppKeyAction::Continue,
         }
     }
 
+    fn cycle_theme(&mut self) {
+        let next = theme::next_theme(self.theme.name);
+        self.set_status_message(format!("Theme: {} (Ctrl+S to save default)", next.display_name));
+        self.theme = next;
+    }
+
+    fn set_status_message(&mut self, msg: String) {
+        self.status_message = Some((msg, Instant::now()));
+    }
+
     /// Updates the search input from a terminal event, re-filters the host
     /// list, and keeps the table selection valid.
-    ///
-    /// When the search text actually changes, the selection resets to the
-    /// top result instead of keeping its previous numeric index: the old
-    /// index could otherwise point at an unrelated host in the newly
-    /// filtered list, making an apparently-unmatched host look selected.
     fn handle_search_event(&mut self, ev: &Event) {
         let search_value_before = self.search.value().to_string();
         self.search.handle_event(ev);
@@ -308,7 +439,8 @@ impl App {
             .map(UnicodeWidthStr::width)
             .max()
             .unwrap_or(0);
-        lengths.push(name_len);
+        // +2 for the "● " bullet glyph prefix
+        lengths.push(name_len + 2);
 
         let aliases_len = self
             .hosts
@@ -415,38 +547,6 @@ fn load_hosts(config: &AppConfig) -> Result<Vec<ssh::Host>> {
     Ok(hosts)
 }
 
-fn palette_by_name(name: &str) -> Result<tailwind::Palette> {
-    let palette = match name.to_lowercase().as_str() {
-        "slate" => tailwind::SLATE,
-        "gray" => tailwind::GRAY,
-        "zinc" => tailwind::ZINC,
-        "neutral" => tailwind::NEUTRAL,
-        "stone" => tailwind::STONE,
-        "red" => tailwind::RED,
-        "orange" => tailwind::ORANGE,
-        "amber" => tailwind::AMBER,
-        "yellow" => tailwind::YELLOW,
-        "lime" => tailwind::LIME,
-        "green" => tailwind::GREEN,
-        "emerald" => tailwind::EMERALD,
-        "teal" => tailwind::TEAL,
-        "cyan" => tailwind::CYAN,
-        "sky" => tailwind::SKY,
-        "blue" => tailwind::BLUE,
-        "indigo" => tailwind::INDIGO,
-        "violet" => tailwind::VIOLET,
-        "purple" => tailwind::PURPLE,
-        "fuchsia" => tailwind::FUCHSIA,
-        "pink" => tailwind::PINK,
-        "rose" => tailwind::ROSE,
-        _ => anyhow::bail!(
-            "Unknown color: {name}\nValid colors: slate, gray, zinc, neutral, stone, red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink, rose"
-        ),
-    };
-
-    Ok(palette)
-}
-
 fn setup_terminal<B>(terminal: &Rc<RefCell<Terminal<B>>>) -> Result<()>
 where
     B: Backend + std::io::Write,
@@ -477,45 +577,195 @@ where
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    let rects = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Min(5),
-        Constraint::Length(3),
+    let total_height = f.area().height;
+    let total_width = f.area().width;
+
+    let show_full_banner = !app.config.no_ascii_art
+        && app.ascii_art_style != AsciiArtStyle::Off
+        && app.ascii_art_style != AsciiArtStyle::Mini
+        && total_height >= 22
+        && total_width >= 60;
+
+    let show_mini_banner = !show_full_banner
+        && !app.config.no_ascii_art
+        && app.ascii_art_style != AsciiArtStyle::Off
+        && total_height >= 14;
+
+    let banner_height = if show_full_banner {
+        app.ascii_art_style.required_height()
+    } else if show_mini_banner {
+        1
+    } else {
+        0
+    };
+
+    let constraints = if banner_height > 0 {
+        vec![
+            Constraint::Length(banner_height),
+            Constraint::Length(3),
+            Constraint::Min(4),
+            Constraint::Length(3),
+        ]
+    } else {
+        vec![
+            Constraint::Length(3),
+            Constraint::Min(4),
+            Constraint::Length(3),
+        ]
+    };
+
+    let rects = Layout::vertical(constraints).split(f.area());
+
+    let (banner_rect, search_rect, table_rect, footer_rect) = if banner_height > 0 {
+        (Some(rects[0]), rects[1], rects[2], rects[3])
+    } else {
+        (None, rects[0], rects[1], rects[2])
+    };
+
+    if let Some(b_rect) = banner_rect {
+        if show_full_banner {
+            render_full_banner(f, app, b_rect);
+        } else if show_mini_banner {
+            let mini = ascii_art::render_mini_banner(
+                &app.theme,
+                app.hosts.non_filtered_iter().count(),
+                app.hosts.len(),
+            );
+            f.render_widget(Paragraph::new(mini).centered(), b_rect);
+        }
+    }
+
+    render_searchbar(f, app, search_rect);
+    render_table(f, app, table_rect);
+    render_footer(f, app, footer_rect);
+
+    // Set cursor in search bar
+    if !app.show_help_modal && !app.show_details_modal {
+        let mut cursor_position = search_rect.as_position();
+        cursor_position.x += u16::try_from(app.search.cursor()).unwrap_or_default() + 5;
+        cursor_position.y += 1;
+        f.set_cursor_position(cursor_position);
+    }
+
+    // Render modals if active
+    if app.show_details_modal {
+        render_details_modal(f, app);
+    } else if app.show_help_modal {
+        render_help_modal(f, app);
+    }
+}
+
+fn render_full_banner(f: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::horizontal([
+        Constraint::Min(32),
+        Constraint::Length(38),
     ])
-    .split(f.area());
+    .split(area);
 
-    render_searchbar(f, app, rects[0]);
+    // Render ASCII banner with gradient
+    let banner_lines = ascii_art::render_banner_lines(app.ascii_art_style, &app.theme);
+    let banner_widget = Paragraph::new(banner_lines);
+    f.render_widget(banner_widget, chunks[0]);
 
-    render_table(f, app, rects[1]);
+    // Render Info Card on the right
+    let total_hosts = app.hosts.non_filtered_iter().count();
+    let filtered_hosts = app.hosts.len();
+    let config_path_display = app
+        .config
+        .config_paths
+        .last()
+        .map(|s| {
+            if s.len() > 24 {
+                format!("...{}", &s[s.len() - 21..])
+            } else {
+                s.clone()
+            }
+        })
+        .unwrap_or_else(|| "~/.ssh/config".to_string());
 
-    render_footer(f, app, rects[2]);
+    let info_lines = vec![
+        Line::from(vec![
+            Span::styled("⚡ SSHS ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("v{}", env!("CARGO_PKG_VERSION")), Style::default().fg(app.theme.muted)),
+            Span::raw("  "),
+            Span::styled(
+                format!("[ {filtered_hosts}/{total_hosts} Hosts ]"),
+                app.theme.badge_style(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("🎨 Theme: ", Style::default().fg(app.theme.muted)),
+            Span::styled(app.theme.display_name, Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("📁 File:  ", Style::default().fg(app.theme.muted)),
+            Span::styled(config_path_display, Style::default().fg(app.theme.accent)),
+        ]),
+    ];
 
-    let mut cursor_position = rects[0].as_position();
-    cursor_position.x += u16::try_from(app.search.cursor()).unwrap_or_default() + 4;
-    cursor_position.y += 1;
-
-    f.set_cursor_position(cursor_position);
+    let info_widget = Paragraph::new(info_lines).alignment(Alignment::Right);
+    f.render_widget(info_widget, chunks[1]);
 }
 
 fn render_searchbar(f: &mut Frame, app: &mut App, area: Rect) {
-    let info_footer = Paragraph::new(Line::from(app.search.value())).block(
+    let search_val = app.search.value();
+    let is_empty = search_val.is_empty();
+
+    let total = app.hosts.non_filtered_iter().count();
+    let count = app.hosts.len();
+
+    let badge_text = format!(" [ {count}/{total} ] ");
+
+    let search_line = if is_empty {
+        Line::from(vec![
+            Span::styled(" ⚡ ", Style::default().fg(app.theme.search_icon_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Type to search hosts (e.g. prod, 192.168, user@)...",
+                Style::default().fg(app.theme.muted).add_modifier(Modifier::ITALIC),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" 🔍 ", Style::default().fg(app.theme.search_icon_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                search_val,
+                Style::default().fg(app.theme.search_text_fg).add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+
+    let searchbar = Paragraph::new(search_line).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(app.palette.c400))
+            .border_style(app.theme.active_border_style())
             .border_type(BorderType::Rounded)
-            .padding(Padding::horizontal(3)),
+            .title(Line::from(Span::styled(" Search ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD))))
+            .title(Line::from(Span::styled(badge_text, app.theme.badge_style())).alignment(Alignment::Right)),
     );
-    f.render_widget(info_footer, area);
+    f.render_widget(searchbar, area);
 }
 
 fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
     // The visible row count: the area minus the two border lines and the header.
     app.page_step = max(usize::from(area.height.saturating_sub(3)), 1);
 
-    let header_style = Style::default().fg(tailwind::CYAN.c500);
-    let selected_style = Style::default().add_modifier(Modifier::REVERSED);
+    if app.hosts.is_empty() {
+        let empty_lines = ascii_art::render_empty_state_lines(&app.theme, app.search.value());
+        let empty_widget = Paragraph::new(empty_lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(app.theme.border_style())
+                .border_type(BorderType::Rounded)
+                .title(Line::from(Span::styled(" Hosts ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)))),
+        );
+        f.render_widget(empty_widget, area);
+        return;
+    }
 
-    let mut header_names = vec!["Name", "Aliases", "User", "Destination", "Port"];
+    let header_style = app.theme.table_header_style();
+    let selected_style = app.theme.selected_row_style();
+
+    let mut header_names = vec!["Host", "Aliases", "User", "Destination", "Port"];
     if app.config.show_proxy_command {
         header_names.push("Proxy");
     }
@@ -529,52 +779,277 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
         .height(1);
 
     let rows = app.hosts.iter().map(|host| {
-        let mut content = vec![
-            host.name.clone(),
+        let name_cell = Cell::from(Text::from(Line::from(vec![
+            Span::styled("● ", Style::default().fg(app.theme.primary)),
+            Span::styled(host.name.clone(), Style::default().fg(app.theme.host_name).add_modifier(Modifier::BOLD)),
+        ])));
+
+        let aliases_cell = Cell::from(Text::from(Span::styled(
             host.aliases.clone(),
+            Style::default().fg(app.theme.aliases),
+        )));
+
+        let user_cell = Cell::from(Text::from(Span::styled(
             host.user.clone().unwrap_or_default(),
+            Style::default().fg(app.theme.user),
+        )));
+
+        let dest_cell = Cell::from(Text::from(Span::styled(
             host.destination.clone(),
+            Style::default().fg(app.theme.destination),
+        )));
+
+        let port_cell = Cell::from(Text::from(Span::styled(
             host.port.clone().unwrap_or_default(),
-        ];
+            Style::default().fg(app.theme.port),
+        )));
+
+        let mut cells = vec![name_cell, aliases_cell, user_cell, dest_cell, port_cell];
+
         if app.config.show_proxy_command {
-            content.push(host.proxy_command.clone().unwrap_or_default());
+            cells.push(Cell::from(Text::from(Span::styled(
+                host.proxy_command.clone().unwrap_or_default(),
+                Style::default().fg(app.theme.proxy),
+            ))));
         }
 
-        content
-            .iter()
-            .map(|content| Cell::from(Text::from(content.clone())))
-            .collect::<Row>()
+        Row::new(cells)
     });
 
-    let bar = " █ ";
+    let cursor_bar = "▌ ";
     let t = Table::new(rows, app.table_columns_constraints.clone())
         .header(header)
         .row_highlight_style(selected_style)
         .highlight_symbol(Text::from(vec![
             "".into(),
-            bar.into(),
-            bar.into(),
+            cursor_bar.into(),
+            cursor_bar.into(),
             "".into(),
         ]))
         .highlight_spacing(HighlightSpacing::Always)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::new().fg(app.palette.c400))
-                .border_type(BorderType::Rounded),
+                .border_style(app.theme.border_style())
+                .border_type(BorderType::Rounded)
+                .title(Line::from(Span::styled(" Hosts ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)))),
         );
 
     f.render_stateful_widget(t, area, &mut app.table_state);
 }
 
 fn render_footer(f: &mut Frame, app: &mut App, area: Rect) {
-    let info_footer = Paragraph::new(Line::from(INFO_TEXT)).centered().block(
+    // Check if temporary status message is active (< 3 seconds)
+    let is_recent_status = if let Some((msg, timestamp)) = &app.status_message {
+        if timestamp.elapsed() < Duration::from_secs(3) {
+            Some(msg.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let footer_line = if let Some(msg) = is_recent_status {
+        Line::from(vec![
+            Span::styled(" ℹ ", Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+            Span::styled(msg, Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" Enter ", app.theme.key_badge_style()),
+            Span::styled(" Connect  ", app.theme.key_desc_style()),
+            Span::styled(" Tab ", app.theme.key_badge_style()),
+            Span::styled(" Details  ", app.theme.key_desc_style()),
+            Span::styled(" ^T ", app.theme.key_badge_style()),
+            Span::styled(" Theme  ", app.theme.key_desc_style()),
+            Span::styled(" ^R ", app.theme.key_badge_style()),
+            Span::styled(" Reload  ", app.theme.key_desc_style()),
+            Span::styled(" ? ", app.theme.key_badge_style()),
+            Span::styled(" Help  ", app.theme.key_desc_style()),
+            Span::styled(" Esc ", app.theme.key_badge_style()),
+            Span::styled(" Quit ", app.theme.key_desc_style()),
+        ])
+    };
+
+    let info_footer = Paragraph::new(footer_line).centered().block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(app.palette.c400))
+            .border_style(app.theme.border_style())
             .border_type(BorderType::Rounded),
     );
     f.render_widget(info_footer, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(popup_layout[1])[1]
+}
+
+fn render_details_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 75, f.area());
+    f.render_widget(Clear, area);
+
+    let selected = app.table_state.selected().unwrap_or(0);
+    if selected >= app.hosts.len() {
+        return;
+    }
+
+    let host = &app.hosts[selected];
+    let rendered_cmd = host
+        .render_command_template(&app.config.command_template)
+        .unwrap_or_else(|_| format!("ssh \"{}\"", host.name));
+
+    let mut lines = vec![
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("  Host Name:        ", Style::default().fg(app.theme.muted)),
+            Span::styled(&host.name, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Aliases:          ", Style::default().fg(app.theme.muted)),
+            Span::styled(if host.aliases.is_empty() { "(none)" } else { &host.aliases }, Style::default().fg(app.theme.aliases)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Destination:      ", Style::default().fg(app.theme.muted)),
+            Span::styled(&host.destination, Style::default().fg(app.theme.destination).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  User:             ", Style::default().fg(app.theme.muted)),
+            Span::styled(host.user.as_deref().unwrap_or("(current user)"), Style::default().fg(app.theme.user)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Port:             ", Style::default().fg(app.theme.muted)),
+            Span::styled(host.port.as_deref().unwrap_or("22 (default)"), Style::default().fg(app.theme.port)),
+        ]),
+    ];
+
+    if let Some(identity) = &host.identity_file {
+        lines.push(Line::from(vec![
+            Span::styled("  Identity File:    ", Style::default().fg(app.theme.muted)),
+            Span::styled(identity, Style::default().fg(app.theme.accent)),
+        ]));
+    }
+
+    if let Some(proxy_jump) = &host.proxy_jump {
+        lines.push(Line::from(vec![
+            Span::styled("  Proxy Jump:       ", Style::default().fg(app.theme.muted)),
+            Span::styled(proxy_jump, Style::default().fg(app.theme.proxy)),
+        ]));
+    }
+
+    if let Some(proxy_cmd) = &host.proxy_command {
+        lines.push(Line::from(vec![
+            Span::styled("  Proxy Command:    ", Style::default().fg(app.theme.muted)),
+            Span::styled(proxy_cmd, Style::default().fg(app.theme.proxy)),
+        ]));
+    }
+
+    lines.push(Line::raw(""));
+    lines.push(Line::from(vec![
+        Span::styled("  Command To Execute:", Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    ❯ {rendered_cmd}"), Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::raw(""));
+    lines.push(
+        Line::from(vec![
+            Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
+            Span::styled(" Connect   ", app.theme.key_desc_style()),
+            Span::styled(" [ ↑/↓ ] ", app.theme.key_badge_style()),
+            Span::styled(" Next/Prev Host   ", app.theme.key_desc_style()),
+            Span::styled(" [ Esc / Tab ] ", app.theme.key_badge_style()),
+            Span::styled(" Close Inspector", app.theme.key_desc_style()),
+        ])
+        .centered(),
+    );
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.active_border_style())
+        .title(Line::from(Span::styled(
+            format!(" 🖥 Host Details: {} ", host.name),
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
+        )));
+
+    let widget = Paragraph::new(lines).block(modal_block);
+    f.render_widget(widget, area);
+}
+
+fn render_help_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(72, 80, f.area());
+    f.render_widget(Clear, area);
+
+    let mut lines = ascii_art::render_help_header(&app.theme);
+    lines.push(Line::raw(""));
+
+    let shortcuts: &[(&str, &[(&str, &str)])] = &[
+        ("Navigation", &[
+            ("↑ / ↓, k / j", "Move selection up / down"),
+            ("PageUp / PageDn", "Scroll one page up / down"),
+            ("Home / End", "Jump to top / bottom of list"),
+        ]),
+        ("Actions", &[
+            ("Enter", "Connect to selected SSH host"),
+            ("Tab", "Open Host Inspector & Details modal"),
+            ("Type text", "Fuzzy search and filter hosts"),
+            ("Esc", "Clear search query or quit"),
+        ]),
+        ("Customization & Tools", &[
+            ("Ctrl+T / F2", "Cycle visual theme dynamically"),
+            ("Ctrl+S", "Save active theme to ~/.config/sshs/config.toml"),
+            ("Ctrl+R", "Reload SSH config files from disk"),
+            ("Ctrl+U", "Clear the entire search query"),
+            ("? / F1 / Ctrl+H", "Toggle this help dialog"),
+        ]),
+    ];
+
+    for (section, items) in shortcuts {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  ── {section} ──"), Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+        ]));
+
+        for (key, desc) in *items {
+            lines.push(Line::from(vec![
+                Span::styled(format!("    {key:<18}"), app.theme.key_badge_style()),
+                Span::styled(format!(" {desc}"), Style::default().fg(app.theme.header_fg)),
+            ]));
+        }
+        lines.push(Line::raw(""));
+    }
+
+    lines.push(
+        Line::from(vec![
+            Span::styled(" [ Esc / ? ] ", app.theme.key_badge_style()),
+            Span::styled(" Close Help ", app.theme.key_desc_style()),
+        ])
+        .centered(),
+    );
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.active_border_style())
+        .title(Line::from(Span::styled(
+            " ❓ Keyboard Shortcuts & Help ",
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
+        )));
+
+    let widget = Paragraph::new(lines).block(modal_block);
+    f.render_widget(widget, area);
 }
 
 #[cfg(test)]
@@ -588,6 +1063,8 @@ mod tests {
                 .into_owned()],
             search_filter: None,
             color: "blue".to_string(),
+            ascii_art: "slant".to_string(),
+            no_ascii_art: false,
             sort_by_name: false,
             sort_by_score: false,
             show_proxy_command: false,
@@ -685,5 +1162,14 @@ mod tests {
         // The stale index (1) would previously stay selected, highlighting
         // "match2" instead of resetting to the top match "match1".
         assert_eq!(app.table_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_theme_cycling() {
+        let config = test_config();
+        let mut app = App::new(&config).unwrap();
+        let initial_theme = app.theme.name;
+        app.cycle_theme();
+        assert_ne!(app.theme.name, initial_theme);
     }
 }
