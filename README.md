@@ -5,11 +5,9 @@ It uses `~/.ssh/config` to list, search, inspect, and connect to hosts.
 
 <br>
 
-![screenshot](.github/demo/screenshot.png)
-
-<br>
-
-![example](.github/demo/demo.gif)
+<p align="center">
+  <img src=".github/demo/paint_blurred_pixel.png" alt="sshs screenshot">
+</p>
 
 ## Features
 
