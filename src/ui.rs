@@ -273,6 +273,13 @@ impl App {
                             AppKeyAction::Continue => {}
                         }
                     }
+                    Event::Resize(_w, _h) => {
+                        let _ = terminal.borrow_mut().clear();
+                        terminal.borrow_mut().draw(|f| ui(f, self))?;
+                    }
+                    Event::FocusGained => {
+                        let _ = terminal.borrow_mut().clear();
+                    }
                     _ => {}
                 }
             }
@@ -785,6 +792,21 @@ impl App {
                     }
                     return Ok(AppKeyAction::Ok);
                 }
+                Char('k') => {
+                    self.show_details_modal = false;
+                    let selected = self.table_state.selected().unwrap_or(0);
+                    if selected < self.hosts.len() {
+                        let host = &self.hosts[selected];
+                        let prompt = PostConnectPrompt {
+                            host_name: host.name.clone(),
+                            destination: host.destination.clone(),
+                            user: host.user.clone(),
+                            port: host.port.clone(),
+                        };
+                        self.run_ssh_copy_id(terminal, &prompt)?;
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
                 Down => {
                     self.next();
                     return Ok(AppKeyAction::Ok);
@@ -899,7 +921,7 @@ impl App {
             host.spawn_command_template(template)?;
         }
 
-        let cmd_status = host.spawn_command_template(&self.config.command_template);
+        let _cmd_status = host.spawn_command_template(&self.config.command_template);
 
         if let Some(template) = &self.config.command_template_on_session_end {
             host.spawn_command_template(template)?;
@@ -909,16 +931,6 @@ impl App {
 
         if self.config.exit_after_ssh_session_ends {
             return Ok(AppKeyAction::Stop);
-        }
-
-        // Check if connection succeeded, prompt user if they want to setup passwordless SSH key
-        if cmd_status.is_ok() {
-            self.post_connect_prompt = Some(PostConnectPrompt {
-                host_name: host.name.clone(),
-                destination: host.destination.clone(),
-                user: host.user.clone(),
-                port: host.port.clone(),
-            });
         }
 
         Ok(AppKeyAction::Ok)
@@ -1222,6 +1234,23 @@ impl App {
                     explorer.select_previous();
                     return Ok(AppKeyAction::Ok);
                 }
+                MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => {
+                    if let Some(menu) = &mut explorer.context_menu {
+                        let menu_w = 44u16;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let menu_h = (crate::sftp_explorer::CONTEXT_MENU_OPTIONS.len() as u16) + 2;
+                        let x = if menu.x + menu_w > width { width.saturating_sub(menu_w + 1) } else { menu.x };
+                        let y = if menu.y + menu_h > height { height.saturating_sub(menu_h + 1) } else { menu.y };
+
+                        if mouse.column >= x && mouse.column < x + menu_w && mouse.row > y && mouse.row <= y + (crate::sftp_explorer::CONTEXT_MENU_OPTIONS.len() as u16) {
+                            let opt = (mouse.row - (y + 1)) as usize;
+                            if opt < crate::sftp_explorer::CONTEXT_MENU_OPTIONS.len() {
+                                menu.selected_index = opt;
+                            }
+                        }
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
                 MouseEventKind::Down(MouseButton::Right) => {
                     if explorer.viewer_content.is_some() || explorer.mkdir_input.is_some() {
                         explorer.viewer_content = None;
@@ -1240,19 +1269,16 @@ impl App {
                             if clicked_idx < explorer.local_entries.len() {
                                 explorer.local_selected = clicked_idx;
                                 explorer.local_table_state.select(Some(clicked_idx));
-                                explorer.open_context_menu_at(mouse.column, mouse.row);
                             }
                         } else {
                             let clicked_idx = explorer.remote_table_state.offset() + rel_row;
                             if clicked_idx < explorer.remote_entries.len() {
                                 explorer.remote_selected = clicked_idx;
                                 explorer.remote_table_state.select(Some(clicked_idx));
-                                explorer.open_context_menu_at(mouse.column, mouse.row);
                             }
                         }
-                    } else {
-                        explorer.open_context_menu_at(mouse.column, mouse.row);
                     }
+                    explorer.open_context_menu_at(mouse.column, mouse.row);
                     return Ok(AppKeyAction::Ok);
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
@@ -1263,7 +1289,7 @@ impl App {
 
                     // If Context menu is open, handle click on context menu
                     if let Some(menu) = explorer.context_menu.clone() {
-                        let menu_w = 40u16;
+                        let menu_w = 44u16;
                         #[allow(clippy::cast_possible_truncation)]
                         let menu_h = (crate::sftp_explorer::CONTEXT_MENU_OPTIONS.len() as u16) + 2;
                         let x = if menu.x + menu_w > width { width.saturating_sub(menu_w + 1) } else { menu.x };
@@ -1910,6 +1936,27 @@ fn render_footer(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(" ℹ ", Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
             Span::styled(msg, Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD)),
         ])
+    } else if area.width < 100 {
+        Line::from(vec![
+            Span::styled(" Enter ", app.theme.key_badge_style()),
+            Span::styled(" SSH ", app.theme.key_desc_style()),
+            Span::styled(" Tab ", app.theme.key_badge_style()),
+            Span::styled(" Info ", app.theme.key_desc_style()),
+            Span::styled(" ^F ", app.theme.key_badge_style()),
+            Span::styled(" SFTP ", app.theme.key_desc_style()),
+            Span::styled(" ^X ", app.theme.key_badge_style()),
+            Span::styled(" X11 ", app.theme.key_desc_style()),
+            Span::styled(" ^L ", app.theme.key_badge_style()),
+            Span::styled(" Tunnel ", app.theme.key_desc_style()),
+            Span::styled(" ^N ", app.theme.key_badge_style()),
+            Span::styled(" Add ", app.theme.key_desc_style()),
+            Span::styled(" ^T ", app.theme.key_badge_style()),
+            Span::styled(" Theme ", app.theme.key_desc_style()),
+            Span::styled(" ^? ", app.theme.key_badge_style()),
+            Span::styled(" Help ", app.theme.key_desc_style()),
+            Span::styled(" Esc ", app.theme.key_badge_style()),
+            Span::styled(" Quit ", app.theme.key_desc_style()),
+        ])
     } else {
         Line::from(vec![
             Span::styled(" Enter ", app.theme.key_badge_style()),
@@ -1961,7 +2008,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 fn render_delete_modal(f: &mut Frame, app: &App, host_name: &str) {
-    let area = centered_rect(58, 30, f.area());
+    let area = centered_rect(62, 30, f.area());
     f.render_widget(Clear, area);
 
     let lines = vec![
@@ -1998,7 +2045,7 @@ fn render_delete_modal(f: &mut Frame, app: &App, host_name: &str) {
 }
 
 fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
-    let area = centered_rect(72, 70, f.area());
+    let area = centered_rect(84, 76, f.area());
     f.render_widget(Clear, area);
 
     let mut lines = Vec::new();
@@ -2023,7 +2070,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
 
     lines.push(Line::from(vec![
         Span::styled(mode_prefix, mode_style),
-        Span::styled("Networking Mode (Keys 1-6 or Space / ← / → to change):", mode_style),
+        Span::styled("Networking Mode (Keys 1-7 or Space / ← / → to change):", mode_style),
     ]));
 
     let modes = [
@@ -2240,7 +2287,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
         .border_type(BorderType::Double)
         .border_style(app.theme.active_border_style())
         .title(Line::from(Span::styled(
-            " 🚇 SSH Tunneling, TOR, Port Knocking & X11 Hub ",
+            " 🌐 SSH Networking, Tunneling & Security Hub ",
             Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
         )));
 
@@ -2399,7 +2446,7 @@ fn render_post_connect_modal(f: &mut Frame, app: &App, prompt: &PostConnectPromp
 }
 
 fn render_details_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(72, 80, f.area());
+    let area = centered_rect(84, 82, f.area());
     f.render_widget(Clear, area);
 
     let selected = app.table_state.selected().unwrap_or(0);
@@ -2468,15 +2515,22 @@ fn render_details_modal(f: &mut Frame, app: &App) {
     lines.push(
         Line::from(vec![
             Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
-            Span::styled(" SSH   ", app.theme.key_desc_style()),
+            Span::styled(" Connect    ", app.theme.key_desc_style()),
             Span::styled(" [ s / ^F ] ", app.theme.key_badge_style()),
-            Span::styled(" SFTP   ", app.theme.key_desc_style()),
+            Span::styled(" SFTP    ", app.theme.key_desc_style()),
             Span::styled(" [ x / ^X ] ", app.theme.key_badge_style()),
-            Span::styled(" X11   ", app.theme.key_desc_style()),
+            Span::styled(" X11    ", app.theme.key_desc_style()),
             Span::styled(" [ t / ^L ] ", app.theme.key_badge_style()),
-            Span::styled(" Tunnel/TOR/Knock   ", app.theme.key_desc_style()),
+            Span::styled(" Tunnel/TOR", app.theme.key_desc_style()),
+        ])
+        .centered(),
+    );
+    lines.push(
+        Line::from(vec![
+            Span::styled(" [ k ] ", app.theme.key_badge_style()),
+            Span::styled(" Copy Key (ssh-copy-id)    ", app.theme.key_desc_style()),
             Span::styled(" [ d / ^D ] ", app.theme.key_badge_style()),
-            Span::styled(" Delete   ", app.theme.key_desc_style()),
+            Span::styled(" Delete Host    ", app.theme.key_desc_style()),
             Span::styled(" [ Esc ] ", app.theme.key_badge_style()),
             Span::styled(" Close", app.theme.key_desc_style()),
         ])
@@ -2497,22 +2551,24 @@ fn render_details_modal(f: &mut Frame, app: &App) {
 }
 
 fn render_help_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(72, 88, f.area());
+    let area = centered_rect(84, 88, f.area());
     f.render_widget(Clear, area);
 
     let mut lines = ascii_art::render_help_header(&app.theme);
     lines.push(Line::raw(""));
 
     let shortcuts: &[(&str, &[(&str, &str)])] = &[
-        ("Navigation", &[
+        ("Navigation & Mouse", &[
             ("↑ / ↓, k / j", "Move selection up / down"),
             ("PageUp / PageDn", "Scroll one page up / down"),
             ("Home / End", "Jump to top / bottom of list"),
+            ("Left Click", "Select / Double-click to connect"),
+            ("Right Click", "Inspect Host / Open Context Menu"),
         ]),
         ("Connections & Networking", &[
             ("Enter", "Connect to selected SSH host"),
-            ("Ctrl+F", "Launch interactive SFTP file transfer"),
-            ("Ctrl+X", "Launch X11 GUI forwarding session (-Y -C)"),
+            ("Ctrl+F / s", "SSHS Explorer (Dual-Pane SFTP Commander)"),
+            ("Ctrl+X / x", "Launch X11 GUI forwarding session (-Y -C)"),
             ("Ctrl+L / Ctrl+P", "Tunneling, TOR SOCKS, Port Knocking & X11 Hub"),
             ("Tab", "Open Host Inspector & Details modal"),
             ("Ctrl+N", "Add a new SSH host to ~/.ssh/config"),

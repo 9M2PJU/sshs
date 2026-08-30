@@ -182,8 +182,8 @@ impl SftpExplorer {
     }
 
     pub fn refresh_remote(&mut self) {
-        let host_name = &self.host.name;
-        let path = &self.remote_path;
+        let host_name = self.host.name.clone();
+        let path = self.remote_path.clone();
 
         let port_args = if let Some(p) = &self.host.port {
             if !p.is_empty() && p != "22" {
@@ -197,23 +197,47 @@ impl SftpExplorer {
 
         let mut cmd = Command::new("ssh");
         cmd.arg("-o").arg("BatchMode=yes");
-        cmd.arg("-o").arg("ConnectTimeout=5");
+        cmd.arg("-o").arg("ConnectTimeout=4");
         for arg in port_args {
             cmd.arg(arg);
         }
-        cmd.arg(host_name);
+        cmd.arg(&host_name);
         cmd.arg(format!("ls -la --time-style=long-iso \"{path}\" 2>/dev/null || ls -la \"{path}\""));
 
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
+        match cmd.output() {
+            Ok(output) if output.status.success() => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 self.remote_entries = Self::parse_remote_ls(&stdout, path != "/" && path != ".");
                 if self.remote_selected >= self.remote_entries.len() {
                     self.remote_selected = self.remote_entries.len().saturating_sub(1);
                 }
                 self.remote_table_state.select(Some(self.remote_selected));
-            } else {
-                self.set_status(format!("Remote ls failed on '{host_name}'"));
+            }
+            Ok(output) => {
+                let err_msg = String::from_utf8_lossy(&output.stderr);
+                let display_err = if err_msg.contains("Permission denied") {
+                    "SSH key auth required. Install key with ssh-copy-id or press Enter in main view".to_string()
+                } else if err_msg.is_empty() {
+                    format!("Remote listing failed for '{path}'")
+                } else {
+                    format!("Remote error: {}", err_msg.lines().next().unwrap_or("unknown error"))
+                };
+                self.set_status(display_err);
+                if path != "/" && path != "." {
+                    self.remote_entries = vec![FileEntry {
+                        name: "..".to_string(),
+                        is_dir: true,
+                        size: 0,
+                        size_display: "<UP--DIR>".to_string(),
+                        modified: String::new(),
+                        permissions: "drwxr-xr-x".to_string(),
+                    }];
+                    self.remote_selected = 0;
+                    self.remote_table_state.select(Some(0));
+                }
+            }
+            Err(e) => {
+                self.set_status(format!("Failed to spawn ssh: {e}"));
             }
         }
     }
@@ -393,26 +417,40 @@ impl SftpExplorer {
                     return;
                 }
                 let local_file = self.local_path.join(&entry.name);
-                let remote_target = format!("{}:{}", self.host.name, self.remote_path);
+                let remote_target = if self.remote_path == "." || self.remote_path.is_empty() {
+                    format!("{}:./", self.host.name)
+                } else {
+                    format!("{}:{}/", self.host.name, self.remote_path)
+                };
                 let local_str = local_file.to_string_lossy().into_owned();
 
                 let mut cmd = Command::new("scp");
                 cmd.arg("-r");
+                cmd.arg("-o").arg("ConnectTimeout=10");
                 if let Some(p) = &self.host.port {
                     if !p.is_empty() && p != "22" {
                         cmd.arg("-P").arg(p);
                     }
                 }
+                if let Some(i) = &self.host.identity_file {
+                    if !i.is_empty() {
+                        cmd.arg("-i").arg(i);
+                    }
+                }
                 cmd.arg(&local_str);
                 cmd.arg(&remote_target);
 
-                self.set_status(format!("Uploading '{}' to remote...", entry.name));
-                match cmd.status() {
-                    Ok(s) if s.success() => {
+                self.set_status(format!("Uploading '{}'...", entry.name));
+                match cmd.output() {
+                    Ok(output) if output.status.success() => {
                         self.set_status(format!("Uploaded '{}' successfully!", entry.name));
                         self.refresh_remote();
                     }
-                    Ok(_) => self.set_status(format!("Upload of '{}' failed", entry.name)),
+                    Ok(output) => {
+                        let err = String::from_utf8_lossy(&output.stderr);
+                        let msg = err.lines().next().unwrap_or("Upload failed");
+                        self.set_status(format!("Upload error: {msg}"));
+                    }
                     Err(e) => self.set_status(format!("Upload error: {e}")),
                 }
             }
@@ -425,29 +463,39 @@ impl SftpExplorer {
                     return;
                 }
                 let remote_src = if self.remote_path == "." || self.remote_path.is_empty() {
-                    format!("{}:{}", self.host.name, entry.name)
+                    format!("{}:./{}", self.host.name, entry.name)
                 } else {
                     format!("{}:{}/{}", self.host.name, self.remote_path, entry.name)
                 };
-                let local_target = self.local_path.to_string_lossy().into_owned();
+                let local_target = format!("{}/", self.local_path.to_string_lossy());
 
                 let mut cmd = Command::new("scp");
                 cmd.arg("-r");
+                cmd.arg("-o").arg("ConnectTimeout=10");
                 if let Some(p) = &self.host.port {
                     if !p.is_empty() && p != "22" {
                         cmd.arg("-P").arg(p);
                     }
                 }
+                if let Some(i) = &self.host.identity_file {
+                    if !i.is_empty() {
+                        cmd.arg("-i").arg(i);
+                    }
+                }
                 cmd.arg(&remote_src);
                 cmd.arg(&local_target);
 
-                self.set_status(format!("Downloading '{}' from remote...", entry.name));
-                match cmd.status() {
-                    Ok(s) if s.success() => {
+                self.set_status(format!("Downloading '{}'...", entry.name));
+                match cmd.output() {
+                    Ok(output) if output.status.success() => {
                         self.set_status(format!("Downloaded '{}' successfully!", entry.name));
                         self.refresh_local();
                     }
-                    Ok(_) => self.set_status(format!("Download of '{}' failed", entry.name)),
+                    Ok(output) => {
+                        let err = String::from_utf8_lossy(&output.stderr);
+                        let msg = err.lines().next().unwrap_or("Download failed");
+                        self.set_status(format!("Download error: {msg}"));
+                    }
                     Err(e) => self.set_status(format!("Download error: {e}")),
                 }
             }
@@ -862,7 +910,7 @@ pub fn render_sftp_explorer(
 }
 
 fn render_context_menu(f: &mut Frame, theme: &Theme, menu: &ContextMenu) {
-    let menu_width = 40u16;
+    let menu_width = 44u16;
     #[allow(clippy::cast_possible_truncation)]
     let menu_height = (CONTEXT_MENU_OPTIONS.len() as u16) + 2;
 
@@ -894,17 +942,17 @@ fn render_context_menu(f: &mut Frame, theme: &Theme, menu: &ContextMenu) {
         lines.push(Line::from(vec![
             Span::styled(prefix, if is_selected { Style::default().fg(theme.primary).add_modifier(Modifier::BOLD) } else { Style::default() }),
             Span::styled(format!("[{key}] "), theme.key_badge_style()),
-            Span::styled(format!("{label:<24}"), line_style),
+            Span::styled(format!("{label:<22}"), line_style),
             Span::styled(format!(" {shortcut}"), Style::default().fg(theme.muted)),
         ]));
     }
 
-    let title = if menu.item_name.is_empty() {
-        " 📋 SSHS Context Menu ".to_string()
-    } else if menu.item_name.len() > 18 {
-        format!(" 📋 {}... ", &menu.item_name[..15])
+    let item_display = if menu.item_name.is_empty() {
+        "Menu".to_string()
+    } else if menu.item_name.len() > 14 {
+        format!("{}...", &menu.item_name[..11])
     } else {
-        format!(" 📋 {} ", menu.item_name)
+        menu.item_name.clone()
     };
 
     let widget = Paragraph::new(lines).block(
@@ -913,10 +961,10 @@ fn render_context_menu(f: &mut Frame, theme: &Theme, menu: &ContextMenu) {
             .border_type(BorderType::Double)
             .border_style(theme.active_border_style())
             .title(Line::from(Span::styled(
-                title,
+                format!(" 📋 {item_display} "),
                 Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
             )))
-            .title(Line::from(Span::styled(" [ 1-7 / Enter / Esc ] ", theme.badge_style())).alignment(Alignment::Right)),
+            .title(Line::from(Span::styled(" [1-7/Esc] ", theme.badge_style())).alignment(Alignment::Right)),
     );
 
     f.render_widget(widget, rect);
@@ -943,49 +991,66 @@ fn render_pane(
     let header = Row::new(header_names.iter().map(|&h| Cell::from(Span::styled(h, theme.table_header_style()))))
         .height(1);
 
-    let rows = entries.iter().map(|e| {
-        let (icon, name_color) = if e.name == ".." {
-            ("📁 ", theme.secondary)
-        } else if e.is_dir {
-            ("📁 ", theme.primary)
-        } else {
-            ("📄 ", theme.header_fg)
-        };
+    let rows: Vec<Row> = if entries.is_empty() {
+        vec![Row::new(vec![
+            Cell::from(Line::from(vec![
+                Span::styled("  (empty or loading... press 'r' to reload)", Style::default().fg(theme.muted).add_modifier(Modifier::ITALIC)),
+            ])),
+            Cell::from(""),
+            Cell::from(""),
+            Cell::from(""),
+        ])]
+    } else {
+        entries.iter().map(|e| {
+            let (icon, name_color) = if e.name == ".." {
+                ("📁 ", theme.secondary)
+            } else if e.is_dir {
+                ("📁 ", theme.primary)
+            } else {
+                ("📄 ", theme.header_fg)
+            };
 
-        let name_cell = Cell::from(Line::from(vec![
-            Span::styled(icon, Style::default().fg(name_color)),
-            Span::styled(&e.name, Style::default().fg(name_color).add_modifier(if e.is_dir { Modifier::BOLD } else { Modifier::empty() })),
-        ]));
+            let name_cell = Cell::from(Line::from(vec![
+                Span::styled(icon, Style::default().fg(name_color)),
+                Span::styled(&e.name, Style::default().fg(name_color).add_modifier(if e.is_dir { Modifier::BOLD } else { Modifier::empty() })),
+            ]));
 
-        let size_cell = Cell::from(Span::styled(
-            &e.size_display,
-            Style::default().fg(theme.port),
-        ));
+            let size_cell = Cell::from(Span::styled(
+                &e.size_display,
+                Style::default().fg(theme.port),
+            ));
 
-        let perm_cell = Cell::from(Span::styled(
-            &e.permissions,
-            Style::default().fg(theme.muted),
-        ));
+            let perm_cell = Cell::from(Span::styled(
+                &e.permissions,
+                Style::default().fg(theme.muted),
+            ));
 
-        let mod_cell = Cell::from(Span::styled(
-            &e.modified,
-            Style::default().fg(theme.aliases),
-        ));
+            let mod_cell = Cell::from(Span::styled(
+                &e.modified,
+                Style::default().fg(theme.aliases),
+            ));
 
-        Row::new(vec![name_cell, size_cell, perm_cell, mod_cell])
-    });
+            Row::new(vec![name_cell, size_cell, perm_cell, mod_cell])
+        }).collect()
+    };
 
     let constraints = [
-        Constraint::Percentage(45),
-        Constraint::Length(12),
+        Constraint::Percentage(42),
+        Constraint::Length(10),
         Constraint::Length(12),
         Constraint::Min(16),
     ];
 
-    let count_text = format!(" [ {} items ] ", entries.len());
+    let count_text = format!(" [{} items] ", entries.len());
+    let short_path = if path_str.len() > 18 {
+        format!("..{}", &path_str[path_str.len().saturating_sub(16)..])
+    } else {
+        path_str.to_string()
+    };
+
     let title_line = Line::from(vec![
         Span::styled(title, if is_active { Style::default().fg(theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(theme.muted) }),
-        Span::styled(format!(" ( {path_str} ) "), Style::default().fg(theme.aliases)),
+        Span::styled(format!("({short_path})"), Style::default().fg(theme.aliases)),
     ]);
 
     let table = Table::new(rows, constraints)
@@ -1029,17 +1094,25 @@ fn render_viewer_popup(f: &mut Frame, theme: &Theme, title: &str, content: &str)
         .map(|l| Line::from(Span::styled(l, Style::default().fg(theme.header_fg))))
         .collect::<Vec<_>>();
 
-    let widget = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(theme.active_border_style())
-            .title(Line::from(Span::styled(
-                format!(" 👁 File Viewer: {title} "),
-                Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
-            )))
-            .title(Line::from(Span::styled(" [ Esc / q to close ] ", theme.badge_style())).alignment(Alignment::Right)),
-    );
+    let title_display = if title.len() > 30 {
+        format!("{}...", &title[..27])
+    } else {
+        title.to_string()
+    };
+
+    let widget = Paragraph::new(lines)
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .border_style(theme.active_border_style())
+                .title(Line::from(Span::styled(
+                    format!(" 👁 {title_display} "),
+                    Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+                )))
+                .title(Line::from(Span::styled(" [Esc/q to close] ", theme.badge_style())).alignment(Alignment::Right)),
+        );
 
     f.render_widget(widget, area);
 }
