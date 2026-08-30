@@ -23,6 +23,10 @@ jobs:
             arch: "arm64"
             rust-target: "aarch64-unknown-linux-gnu"
             runs-on: ubuntu-24.04-arm
+          - os: linux
+            arch: "arm64-musl"
+            rust-target: "aarch64-unknown-linux-musl"
+            runs-on: ubuntu-24.04-arm
           - os: darwin
             arch: "amd64"
             rust-target: "x86_64-apple-darwin"
@@ -46,6 +50,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install musl-tools
+        if: ${{ matrix.target.os == 'linux' && contains(matrix.target.rust-target, 'musl') }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Install toolchain
         run: rustup toolchain install stable --profile minimal --target ${{ matrix.target.rust-target }} --no-self-update
@@ -71,11 +79,11 @@ jobs:
           asset_name: ${{ steps.set_filename.outputs.filename }}
           file: target/${{ matrix.target.rust-target }}/release/sshs${{ steps.set_extension.outputs.extension }}
 
-      - name: Compute checksums
+      - name: Compute checksums (Unix)
         run: shasum --algorithm 256 "target/${{ matrix.target.rust-target }}/release/sshs${{ steps.set_extension.outputs.extension }}" > "target/${{ matrix.target.rust-target }}/release/sshs${{ steps.set_extension.outputs.extension }}.sha256"
         if: ${{ matrix.target.os != 'windows' }}
 
-      - name: Compute checksums
+      - name: Compute checksums (Windows)
         run: (Get-FileHash -Algorithm SHA256 -Path "target/${{ matrix.target.rust-target }}/release/sshs${{ steps.set_extension.outputs.extension }}").Hash | Out-File -FilePath "target/${{ matrix.target.rust-target }}/release/sshs${{ steps.set_extension.outputs.extension }}.sha256"
         if: ${{ matrix.target.os == 'windows' }}
         shell: pwsh
@@ -87,20 +95,77 @@ jobs:
           asset_name: ${{ steps.set_filename.outputs.filename }}.sha256
           file: target/${{ matrix.target.rust-target }}/release/sshs${{ steps.set_extension.outputs.extension }}.sha256
 
+      # Create and upload tarball / zip distribution archives for Homebrew, Scoop, and Package Managers
+      - name: Package Tarball (Linux & macOS)
+        if: ${{ matrix.target.os != 'windows' }}
+        run: |
+          ARCHIVE_DIR="sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}"
+          mkdir -p "$ARCHIVE_DIR"
+          cp "target/${{ matrix.target.rust-target }}/release/sshs" "$ARCHIVE_DIR/"
+          cp README.md LICENSE "$ARCHIVE_DIR/"
+          if [ -d docs ]; then cp -r docs "$ARCHIVE_DIR/"; fi
+          tar -czvf "${ARCHIVE_DIR}.tar.gz" "$ARCHIVE_DIR"
+          shasum --algorithm 256 "${ARCHIVE_DIR}.tar.gz" > "${ARCHIVE_DIR}.tar.gz.sha256"
+
+      - uses: svenstaro/upload-release-action@v2
+        if: ${{ matrix.target.os != 'windows' }}
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.tar.gz
+          file: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.tar.gz
+
+      - uses: svenstaro/upload-release-action@v2
+        if: ${{ matrix.target.os != 'windows' }}
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.tar.gz.sha256
+          file: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.tar.gz.sha256
+
+      - name: Package Zip (Windows)
+        if: ${{ matrix.target.os == 'windows' }}
+        run: |
+          $ARCHIVE_DIR = "sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}"
+          New-Item -ItemType Directory -Force -Path $ARCHIVE_DIR
+          Copy-Item "target/${{ matrix.target.rust-target }}/release/sshs.exe" -Destination "$ARCHIVE_DIR/"
+          Copy-Item "README.md", "LICENSE" -Destination "$ARCHIVE_DIR/"
+          Compress-Archive -Path "$ARCHIVE_DIR/*" -DestinationPath "${ARCHIVE_DIR}.zip" -Force
+          (Get-FileHash -Algorithm SHA256 -Path "${ARCHIVE_DIR}.zip").Hash | Out-File -FilePath "${ARCHIVE_DIR}.zip.sha256"
+        shell: pwsh
+
+      - uses: svenstaro/upload-release-action@v2
+        if: ${{ matrix.target.os == 'windows' }}
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.zip
+          file: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.zip
+
+      - uses: svenstaro/upload-release-action@v2
+        if: ${{ matrix.target.os == 'windows' }}
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.zip.sha256
+          file: sshs-${{ matrix.target.os }}-${{ matrix.target.arch }}.zip.sha256
+
   package:
     strategy:
       fail-fast: false
       matrix:
         target:
           - arch: "amd64"
+            rpm-arch: "x86_64"
             rust-target: "x86_64-unknown-linux-gnu"
             runs-on: ubuntu-24.04
           - arch: "arm64"
+            rpm-arch: "aarch64"
             rust-target: "aarch64-unknown-linux-gnu"
             runs-on: ubuntu-24.04-arm
     needs: build
     runs-on: ${{ matrix.target.runs-on }}
-    name: Package and upload artifact
+    name: Package deb and rpm artifacts
     defaults:
       run:
         shell: bash
@@ -110,8 +175,10 @@ jobs:
       - name: Install toolchain
         run: rustup toolchain install stable --profile minimal --target ${{ matrix.target.rust-target }} --no-self-update
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
+      - name: Install cargo-deb and cargo-generate-rpm
+        run: |
+          cargo install cargo-deb || true
+          cargo install cargo-generate-rpm || true
 
       - uses: Swatinem/rust-cache@v2
 
@@ -121,29 +188,58 @@ jobs:
           fileName: sshs-linux-${{ matrix.target.arch }}
           out-file-path: target/${{ matrix.target.rust-target }}/release
 
-      - name: Rename binary
-        run: mv target/${{ matrix.target.rust-target }}/release/sshs-linux-${{ matrix.target.arch }} target/${{ matrix.target.rust-target }}/release/sshs
+      - name: Setup binary for packagers
+        run: |
+          mkdir -p target/${{ matrix.target.rust-target }}/release
+          cp target/${{ matrix.target.rust-target }}/release/sshs-linux-${{ matrix.target.arch }} target/${{ matrix.target.rust-target }}/release/sshs
+          cp target/${{ matrix.target.rust-target }}/release/sshs ./sshs
+          chmod +x ./sshs target/${{ matrix.target.rust-target }}/release/sshs
 
+      # Debian / Ubuntu .deb package
       - name: Create Debian package
         run: cargo deb --no-build --target ${{ matrix.target.rust-target }} --output "target/${{ matrix.target.rust-target }}/debian/sshs-${{ matrix.target.arch }}.deb"
-
-      - name: Set deb filename
-        id: set_filename
-        run: echo "filename=sshs-linux-${{ matrix.target.arch }}.deb" >> $GITHUB_OUTPUT
 
       - uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref }}
-          asset_name: ${{ steps.set_filename.outputs.filename }}
+          asset_name: sshs-linux-${{ matrix.target.arch }}.deb
           file: target/${{ matrix.target.rust-target }}/debian/sshs-${{ matrix.target.arch }}.deb
 
-      - name: Compute checksums
+      - name: Compute deb checksums
         run: shasum --algorithm 256 "target/${{ matrix.target.rust-target }}/debian/sshs-${{ matrix.target.arch }}.deb" > "target/${{ matrix.target.rust-target }}/debian/sshs-${{ matrix.target.arch }}.deb.sha256"
 
       - uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref }}
-          asset_name: ${{ steps.set_filename.outputs.filename }}.sha256
+          asset_name: sshs-linux-${{ matrix.target.arch }}.deb.sha256
           file: target/${{ matrix.target.rust-target }}/debian/sshs-${{ matrix.target.arch }}.deb.sha256
+
+      # RedHat / Fedora / CentOS / openSUSE .rpm package
+      - name: Create RPM package
+        run: |
+          mkdir -p target/generate-rpm
+          cargo generate-rpm --target ${{ matrix.target.rust-target }} --output target/generate-rpm/sshs-${{ matrix.target.rpm-arch }}.rpm || true
+
+      - name: Check RPM and Upload
+        if: hashFiles('target/generate-rpm/sshs-*.rpm') != ''
+        run: |
+          shasum --algorithm 256 target/generate-rpm/sshs-${{ matrix.target.rpm-arch }}.rpm > target/generate-rpm/sshs-${{ matrix.target.rpm-arch }}.rpm.sha256
+
+      - uses: svenstaro/upload-release-action@v2
+        if: hashFiles('target/generate-rpm/sshs-*.rpm') != ''
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-linux-${{ matrix.target.rpm-arch }}.rpm
+          file: target/generate-rpm/sshs-${{ matrix.target.rpm-arch }}.rpm
+
+      - uses: svenstaro/upload-release-action@v2
+        if: hashFiles('target/generate-rpm/sshs-*.rpm') != ''
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-linux-${{ matrix.target.rpm-arch }}.rpm.sha256
+          file: target/generate-rpm/sshs-${{ matrix.target.rpm-arch }}.rpm.sha256
+

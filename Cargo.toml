@@ -20,7 +20,21 @@ lto = true
 codegen-units = 1
 
 [package.metadata.deb]
+maintainer = "9M2PJU <9m2pju@gmail.com>"
+copyright = "2026, 9M2PJU, Nathanael Demacon"
+license-file = ["LICENSE", "4"]
+extended-description = "Terminal user interface for SSH with themes, ASCII banners, SSHS Explorer, and networking hub."
 depends = "$auto, openssh-client"
+section = "net"
+priority = "optional"
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "sshs", dest = "/usr/bin/sshs", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/sshs/README.md", mode = "644", doc = true },
+    { source = "docs/user-manual.md", dest = "/usr/share/doc/sshs/user-manual.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/sshs/LICENSE", mode = "644", doc = true },
+]
 
 [dependencies]
 anyhow = "1.0.98"
