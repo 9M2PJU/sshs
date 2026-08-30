@@ -8,8 +8,9 @@ use ratatui::{
 use std::{
     cmp::min,
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{Arc, Mutex},
     thread,
     time::{Instant, UNIX_EPOCH},
@@ -112,6 +113,34 @@ fn get_dir_size(path: &Path) -> u64 {
         }
     }
     0
+}
+
+fn parse_rsync_progress(line: &str) -> Option<(u64, u8, String)> {
+    for part in line.split('\r') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+        if tokens.len() >= 2 {
+            if let Some(pct_idx) = tokens.iter().position(|t| t.ends_with('%')) {
+                if pct_idx > 0 {
+                    let pct_str = tokens[pct_idx].trim_end_matches('%');
+                    if let Ok(pct) = pct_str.parse::<u8>() {
+                        let bytes_str = tokens[0].replace(',', "");
+                        let bytes = bytes_str.parse::<u64>().unwrap_or(0);
+                        let speed = if tokens.len() > pct_idx + 1 {
+                            tokens[pct_idx + 1].to_string()
+                        } else {
+                            "-- KB/s".to_string()
+                        };
+                        return Some((bytes, pct, speed));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 impl SftpExplorer {
@@ -535,7 +564,7 @@ impl SftpExplorer {
                 let remote_target = if self.remote_path == "." || self.remote_path.is_empty() {
                     format!("{}:./", self.host.name)
                 } else {
-                    format!("{}:{}/", self.host.name, self.remote_path)
+                    format!("{}:./{}/", self.host.name, self.remote_path.trim_start_matches("./"))
                 };
                 (true, entry.name, local_file.to_string_lossy().into_owned(), remote_target, entry.size, entry.is_dir)
             }
@@ -549,7 +578,7 @@ impl SftpExplorer {
                 let remote_src = if self.remote_path == "." || self.remote_path.is_empty() {
                     format!("{}:./{}", self.host.name, entry.name)
                 } else {
-                    format!("{}:{}/{}", self.host.name, self.remote_path, entry.name)
+                    format!("{}:./{}/{}", self.host.name, self.remote_path.trim_start_matches("./"), entry.name)
                 };
                 let local_target = format!("{}/", self.local_path.to_string_lossy());
                 (false, entry.name, remote_src, local_target, entry.size, entry.is_dir)
@@ -566,7 +595,7 @@ impl SftpExplorer {
             bytes_transferred: 0,
             percentage: 5,
             speed: "-- KB/s".to_string(),
-            transferred_display: if total_size > 0 { format_bytes(total_size) } else { "calculating...".to_string() },
+            transferred_display: if total_size > 0 { format_bytes(total_size) } else { "streaming...".to_string() },
             is_complete: false,
             error: None,
             start_time: Instant::now(),
@@ -575,7 +604,7 @@ impl SftpExplorer {
         self.active_transfer = Some(transfer_state.clone());
         self.set_status(format!("Transferring '{}'...", name));
 
-        // Asynchronously calculate directory size in background if uploading a directory
+        // Background size calculator if local folder
         if is_upload && is_dir {
             let src_calc = src.clone();
             let state_calc = transfer_state.clone();
@@ -583,61 +612,149 @@ impl SftpExplorer {
                 let calculated = get_dir_size(Path::new(&src_calc));
                 if let Ok(mut state) = state_calc.lock() {
                     state.total_bytes = calculated;
-                    state.transferred_display = format_bytes(calculated);
                 }
             });
         }
 
         let host = self.host.clone();
         thread::spawn(move || {
-            let mut cmd = Command::new("scp");
-            cmd.arg("-r");
-            cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
-            cmd.arg("-o").arg("BatchMode=yes");
-            cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
-            cmd.arg("-o").arg("ConnectTimeout=10");
+            let mut ssh_args = vec![
+                "-o".to_string(), "BatchMode=yes".to_string(),
+                "-o".to_string(), "StrictHostKeyChecking=accept-new".to_string(),
+                "-o".to_string(), "ConnectTimeout=10".to_string(),
+            ];
             if let Some(p) = &host.port {
                 if !p.is_empty() && p != "22" {
-                    cmd.arg("-P").arg(p);
+                    ssh_args.push("-p".to_string());
+                    ssh_args.push(p.clone());
                 }
             }
             if let Some(i) = &host.identity_file {
                 if !i.is_empty() {
-                    cmd.arg("-i").arg(i);
+                    ssh_args.push("-i".to_string());
+                    ssh_args.push(i.clone());
                 }
             }
-            cmd.arg(&src);
-            cmd.arg(&dst);
+            let ssh_opt = format!("ssh {}", ssh_args.join(" "));
 
-            match cmd.output() {
-                Ok(output) if output.status.success() => {
-                    if let Ok(mut state) = transfer_state.lock() {
-                        state.percentage = 100;
-                        state.bytes_transferred = state.total_bytes;
-                        state.transferred_display = format_bytes(state.total_bytes);
-                        let elapsed = state.start_time.elapsed().as_secs_f64().max(0.1);
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                        let bps = (state.total_bytes as f64) / elapsed;
-                        state.speed = format!("{}/s", format_bytes(bps as u64));
-                        state.is_complete = true;
+            // Try fast streaming rsync first
+            let mut rsync_cmd = Command::new("rsync");
+            rsync_cmd.arg("-avz");
+            rsync_cmd.arg("--info=progress2");
+            rsync_cmd.arg("-e").arg(&ssh_opt);
+            rsync_cmd.arg(&src);
+            rsync_cmd.arg(&dst);
+            rsync_cmd.stdout(Stdio::piped());
+            rsync_cmd.stderr(Stdio::piped());
+
+            let mut run_res = match rsync_cmd.spawn() {
+                Ok(mut child) => {
+                    if let Some(stdout) = child.stdout.take() {
+                        let mut reader = BufReader::new(stdout);
+                        let mut buf = Vec::new();
+                        while let Ok(n) = reader.read_until(b'\r', &mut buf) {
+                            if n == 0 {
+                                break;
+                            }
+                            let line = String::from_utf8_lossy(&buf);
+                            if let Some((bytes, pct, speed)) = parse_rsync_progress(&line) {
+                                if let Ok(mut state) = transfer_state.lock() {
+                                    state.bytes_transferred = bytes;
+                                    state.percentage = pct.min(100);
+                                    state.speed = speed;
+                                    state.transferred_display = if state.total_bytes > 0 {
+                                        format!("{}/{}", format_bytes(bytes), format_bytes(state.total_bytes))
+                                    } else {
+                                        format_bytes(bytes)
+                                    };
+                                }
+                            }
+                            buf.clear();
+                        }
+                    }
+
+                    match child.wait_with_output() {
+                        Ok(output) if output.status.success() => {
+                            if let Ok(mut state) = transfer_state.lock() {
+                                state.percentage = 100;
+                                if state.bytes_transferred > 0 {
+                                    state.transferred_display = format_bytes(state.bytes_transferred);
+                                } else if state.total_bytes > 0 {
+                                    state.transferred_display = format_bytes(state.total_bytes);
+                                }
+                                let elapsed = state.start_time.elapsed().as_secs_f64().max(0.1);
+                                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                                let bps = (state.bytes_transferred.max(state.total_bytes) as f64) / elapsed;
+                                state.speed = format!("{}/s", format_bytes(bps as u64));
+                                state.is_complete = true;
+                            }
+                            Ok(())
+                        }
+                        Ok(output) => {
+                            let err = String::from_utf8_lossy(&output.stderr);
+                            let clean_err = err
+                                .lines()
+                                .filter(|l| !l.starts_with("** WARNING"))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            Err(if clean_err.is_empty() { "rsync failed".to_string() } else { clean_err })
+                        }
+                        Err(e) => Err(format!("rsync error: {e}")),
                     }
                 }
-                Ok(output) => {
-                    let err = String::from_utf8_lossy(&output.stderr);
-                    let clean_err = err
-                        .lines()
-                        .filter(|l| !l.starts_with("** WARNING"))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let msg = if clean_err.is_empty() { "Transfer failed".to_string() } else { clean_err };
-                    if let Ok(mut state) = transfer_state.lock() {
-                        state.error = Some(msg);
+                Err(_) => Err("rsync not available".to_string()),
+            };
+
+            // Fallback to scp -r -O if rsync was not installed
+            if let Err(err_msg) = &run_res {
+                if err_msg == "rsync not available" || err_msg.contains("command not found") || err_msg.contains("not found") {
+                    let mut cmd = Command::new("scp");
+                    cmd.arg("-r");
+                    cmd.arg("-O");
+                    cmd.arg("-o").arg("BatchMode=yes");
+                    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+                    cmd.arg("-o").arg("ConnectTimeout=10");
+                    if let Some(p) = &host.port {
+                        if !p.is_empty() && p != "22" {
+                            cmd.arg("-P").arg(p);
+                        }
+                    }
+                    if let Some(i) = &host.identity_file {
+                        if !i.is_empty() {
+                            cmd.arg("-i").arg(i);
+                        }
+                    }
+                    cmd.arg(&src);
+                    cmd.arg(&dst);
+
+                    match cmd.output() {
+                        Ok(output) if output.status.success() => {
+                            if let Ok(mut state) = transfer_state.lock() {
+                                state.percentage = 100;
+                                state.is_complete = true;
+                            }
+                            run_res = Ok(());
+                        }
+                        Ok(output) => {
+                            let err = String::from_utf8_lossy(&output.stderr);
+                            let clean_err = err
+                                .lines()
+                                .filter(|l| !l.starts_with("** WARNING"))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            let msg = if clean_err.is_empty() { "Transfer failed".to_string() } else { clean_err };
+                            run_res = Err(msg);
+                        }
+                        Err(e) => {
+                            run_res = Err(format!("Execution error: {e}"));
+                        }
                     }
                 }
-                Err(e) => {
-                    if let Ok(mut state) = transfer_state.lock() {
-                        state.error = Some(format!("Execution error: {e}"));
-                    }
+            }
+
+            if let Err(e) = run_res {
+                if let Ok(mut state) = transfer_state.lock() {
+                    state.error = Some(e);
                 }
             }
         });
@@ -1463,5 +1580,16 @@ drwxr-xr-x 2 user user 4096 2026-08-30 11:45 my_folder
         assert_eq!(entries[3].name, "script.sh");
         assert!(!entries[3].is_dir);
         assert_eq!(entries[3].size, 9876);
+    }
+
+    #[test]
+    fn test_parse_rsync_progress() {
+        let line = "         3,833,856  73%    1.75MB/s    0:00:00";
+        let parsed = parse_rsync_progress(line);
+        assert_eq!(parsed, Some((3833856, 73, "1.75MB/s".to_string())));
+
+        let line_done = "5,242,880 100%    1.24MB/s    0:00:04 (xfr#1, to-chk=0/2)";
+        let parsed_done = parse_rsync_progress(line_done);
+        assert_eq!(parsed_done, Some((5242880, 100, "1.24MB/s".to_string())));
     }
 }
