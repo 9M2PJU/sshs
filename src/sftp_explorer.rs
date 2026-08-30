@@ -473,24 +473,30 @@ impl SftpExplorer {
                     self.set_status(format!("Transfer error: {err}"));
                     self.active_transfer = None;
                 } else {
-                    // Update live progress estimation
+                    // Update live progress estimation without blocking UI
                     let elapsed = state.start_time.elapsed().as_secs_f64().max(0.1);
                     if state.total_bytes > 0 {
                         if !state.is_upload {
                             let dst_local = Path::new(&state.dst_path).join(&state.name);
-                            let current_size = if dst_local.is_dir() {
-                                get_dir_size(&dst_local)
+                            let current_size = fs::metadata(&dst_local).map(|m| m.len()).unwrap_or(0);
+                            if current_size > 0 {
+                                state.bytes_transferred = current_size;
+                                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                                let pct = ((current_size as f64 / state.total_bytes as f64) * 100.0).min(99.0) as u8;
+                                state.percentage = pct.max(state.percentage).max(5);
+                                state.transferred_display = format!("{}/{}", format_bytes(current_size), format_bytes(state.total_bytes));
+                                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                                let bps = (current_size as f64) / elapsed;
+                                state.speed = format!("{}/s", format_bytes(bps as u64));
                             } else {
-                                fs::metadata(&dst_local).map(|m| m.len()).unwrap_or(0)
-                            };
-                            state.bytes_transferred = current_size;
-                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                            let pct = ((current_size as f64 / state.total_bytes as f64) * 100.0).min(99.0) as u8;
-                            state.percentage = pct.max(state.percentage).max(5);
-                            state.transferred_display = format!("{}/{}", format_bytes(current_size), format_bytes(state.total_bytes));
-                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                            let bps = (current_size as f64) / elapsed;
-                            state.speed = format!("{}/s", format_bytes(bps as u64));
+                                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                                let pct = ((elapsed * 15.0).min(90.0)) as u8;
+                                state.percentage = pct.max(state.percentage).max(5);
+                                state.transferred_display = format_bytes(state.total_bytes);
+                                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                                let bps = (state.total_bytes as f64) / elapsed;
+                                state.speed = format!("{}/s", format_bytes(bps as u64));
+                            }
                         } else {
                             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                             let pct = ((elapsed * 18.0).min(92.0)) as u8;
@@ -531,8 +537,7 @@ impl SftpExplorer {
                 } else {
                     format!("{}:{}/", self.host.name, self.remote_path)
                 };
-                let total_size = if entry.is_dir { get_dir_size(&local_file) } else { entry.size };
-                (true, entry.name, local_file.to_string_lossy().into_owned(), remote_target, total_size)
+                (true, entry.name, local_file.to_string_lossy().into_owned(), remote_target, entry.size, entry.is_dir)
             }
             ActivePane::Remote => {
                 let Some(entry) = self.remote_entries.get(self.remote_selected).cloned() else {
@@ -547,11 +552,11 @@ impl SftpExplorer {
                     format!("{}:{}/{}", self.host.name, self.remote_path, entry.name)
                 };
                 let local_target = format!("{}/", self.local_path.to_string_lossy());
-                (false, entry.name, remote_src, local_target, entry.size)
+                (false, entry.name, remote_src, local_target, entry.size, entry.is_dir)
             }
         };
 
-        let (is_upload, name, src, dst, total_size) = transfer_info;
+        let (is_upload, name, src, dst, total_size, is_dir) = transfer_info;
         let transfer_state = Arc::new(Mutex::new(ActiveTransfer {
             name: name.clone(),
             is_upload,
@@ -561,7 +566,7 @@ impl SftpExplorer {
             bytes_transferred: 0,
             percentage: 5,
             speed: "-- KB/s".to_string(),
-            transferred_display: format_bytes(total_size),
+            transferred_display: if total_size > 0 { format_bytes(total_size) } else { "calculating...".to_string() },
             is_complete: false,
             error: None,
             start_time: Instant::now(),
@@ -570,12 +575,27 @@ impl SftpExplorer {
         self.active_transfer = Some(transfer_state.clone());
         self.set_status(format!("Transferring '{}'...", name));
 
+        // Asynchronously calculate directory size in background if uploading a directory
+        if is_upload && is_dir {
+            let src_calc = src.clone();
+            let state_calc = transfer_state.clone();
+            thread::spawn(move || {
+                let calculated = get_dir_size(Path::new(&src_calc));
+                if let Ok(mut state) = state_calc.lock() {
+                    state.total_bytes = calculated;
+                    state.transferred_display = format_bytes(calculated);
+                }
+            });
+        }
+
         let host = self.host.clone();
         thread::spawn(move || {
             let mut cmd = Command::new("scp");
             cmd.arg("-r");
             cmd.arg("-O"); // Use legacy SCP protocol to support DietPi / Raspbian / Dropbear servers without sftp-server
-            cmd.arg("-o").arg("ConnectTimeout=15");
+            cmd.arg("-o").arg("BatchMode=yes");
+            cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+            cmd.arg("-o").arg("ConnectTimeout=10");
             if let Some(p) = &host.port {
                 if !p.is_empty() && p != "22" {
                     cmd.arg("-P").arg(p);
