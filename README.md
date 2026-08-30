@@ -1,9 +1,5 @@
 # sshs
 
-<a href="https://repology.org/project/sshs/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/sshs.svg" alt="Packaging status" align="right">
-</a>
-
 Terminal user interface for SSH with vibrant color themes, fancy ASCII art banners, and host inspection.  
 It uses `~/.ssh/config` to list, search, inspect, and connect to hosts.
 
