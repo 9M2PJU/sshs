@@ -823,6 +823,966 @@ pub const THEME_LAVENDER: Theme = Theme {
     footer_desc_fg: Color::Rgb(240, 235, 255),
 };
 
+pub const THEME_CATPPUCCIN_MACCHIATO: Theme = Theme {
+    name: "catppuccin-macchiato",
+    display_name: "Catppuccin Macchiato",
+    primary: Color::Rgb(198, 160, 246),       // Mauve
+    secondary: Color::Rgb(183, 189, 248),     // Lavender
+    accent: Color::Rgb(139, 213, 202),        // Teal
+    muted: Color::Rgb(110, 115, 141),
+    border: Color::Rgb(198, 160, 246),
+    border_active: Color::Rgb(138, 173, 244),
+    banner_start: Color::Rgb(198, 160, 246),
+    banner_end: Color::Rgb(138, 173, 244),
+    header_fg: Color::Rgb(202, 211, 245),
+    table_header: Color::Rgb(138, 173, 244),
+    host_name: Color::Rgb(198, 160, 246),
+    aliases: Color::Rgb(183, 189, 248),
+    user: Color::Rgb(166, 218, 149),          // Green
+    destination: Color::Rgb(145, 215, 227),   // Sapphire
+    port: Color::Rgb(245, 169, 127),          // Peach
+    proxy: Color::Rgb(245, 194, 231),         // Pink
+    selected_fg: Color::Rgb(24, 25, 38),
+    selected_bg: Color::Rgb(198, 160, 246),
+    cursor_symbol_fg: Color::Rgb(238, 212, 159),
+    badge_bg: Color::Rgb(36, 39, 58),
+    badge_fg: Color::Rgb(198, 160, 246),
+    search_icon_fg: Color::Rgb(238, 212, 159),
+    search_border: Color::Rgb(198, 160, 246),
+    search_text_fg: Color::Rgb(202, 211, 245),
+    footer_key_bg: Color::Rgb(36, 39, 58),
+    footer_key_fg: Color::Rgb(198, 160, 246),
+    footer_desc_fg: Color::Rgb(202, 211, 245),
+};
+
+pub const THEME_CATPPUCCIN_FRAPPE: Theme = Theme {
+    name: "catppuccin-frappe",
+    display_name: "Catppuccin Frappé",
+    primary: Color::Rgb(202, 158, 230),       // Mauve
+    secondary: Color::Rgb(186, 187, 241),     // Lavender
+    accent: Color::Rgb(129, 200, 190),        // Teal
+    muted: Color::Rgb(115, 121, 148),
+    border: Color::Rgb(202, 158, 230),
+    border_active: Color::Rgb(140, 170, 238),
+    banner_start: Color::Rgb(202, 158, 230),
+    banner_end: Color::Rgb(140, 170, 238),
+    header_fg: Color::Rgb(198, 208, 245),
+    table_header: Color::Rgb(140, 170, 238),
+    host_name: Color::Rgb(202, 158, 230),
+    aliases: Color::Rgb(186, 187, 241),
+    user: Color::Rgb(166, 209, 137),          // Green
+    destination: Color::Rgb(133, 193, 220),   // Sapphire
+    port: Color::Rgb(239, 159, 118),          // Peach
+    proxy: Color::Rgb(244, 184, 228),         // Pink
+    selected_fg: Color::Rgb(35, 38, 52),
+    selected_bg: Color::Rgb(202, 158, 230),
+    cursor_symbol_fg: Color::Rgb(229, 200, 144),
+    badge_bg: Color::Rgb(48, 52, 70),
+    badge_fg: Color::Rgb(202, 158, 230),
+    search_icon_fg: Color::Rgb(229, 200, 144),
+    search_border: Color::Rgb(202, 158, 230),
+    search_text_fg: Color::Rgb(198, 208, 245),
+    footer_key_bg: Color::Rgb(48, 52, 70),
+    footer_key_fg: Color::Rgb(202, 158, 230),
+    footer_desc_fg: Color::Rgb(198, 208, 245),
+};
+
+pub const THEME_TOKYONIGHT_STORM: Theme = Theme {
+    name: "tokyonight-storm",
+    display_name: "Tokyo Night Storm",
+    primary: Color::Rgb(122, 162, 247),       // Blue
+    secondary: Color::Rgb(187, 154, 247),     // Magenta
+    accent: Color::Rgb(125, 207, 255),        // Cyan
+    muted: Color::Rgb(86, 95, 137),
+    border: Color::Rgb(122, 162, 247),
+    border_active: Color::Rgb(187, 154, 247),
+    banner_start: Color::Rgb(122, 162, 247),
+    banner_end: Color::Rgb(187, 154, 247),
+    header_fg: Color::Rgb(192, 202, 245),
+    table_header: Color::Rgb(125, 207, 255),
+    host_name: Color::Rgb(122, 162, 247),
+    aliases: Color::Rgb(187, 154, 247),
+    user: Color::Rgb(158, 206, 106),          // Green
+    destination: Color::Rgb(125, 207, 255),
+    port: Color::Rgb(255, 158, 100),          // Orange
+    proxy: Color::Rgb(247, 118, 142),         // Red
+    selected_fg: Color::Rgb(29, 32, 48),
+    selected_bg: Color::Rgb(122, 162, 247),
+    cursor_symbol_fg: Color::Rgb(224, 175, 104),
+    badge_bg: Color::Rgb(36, 40, 59),
+    badge_fg: Color::Rgb(122, 162, 247),
+    search_icon_fg: Color::Rgb(224, 175, 104),
+    search_border: Color::Rgb(122, 162, 247),
+    search_text_fg: Color::Rgb(192, 202, 245),
+    footer_key_bg: Color::Rgb(36, 40, 59),
+    footer_key_fg: Color::Rgb(122, 162, 247),
+    footer_desc_fg: Color::Rgb(192, 202, 245),
+};
+
+pub const THEME_TOKYONIGHT_LIGHT: Theme = Theme {
+    name: "tokyonight-light",
+    display_name: "Tokyo Night Light",
+    primary: Color::Rgb(52, 84, 139),         // Deep Blue
+    secondary: Color::Rgb(143, 86, 177),      // Purple
+    accent: Color::Rgb(15, 75, 110),          // Cyan
+    muted: Color::Rgb(142, 146, 166),
+    border: Color::Rgb(52, 84, 139),
+    border_active: Color::Rgb(143, 86, 177),
+    banner_start: Color::Rgb(52, 84, 139),
+    banner_end: Color::Rgb(143, 86, 177),
+    header_fg: Color::Rgb(52, 59, 88),
+    table_header: Color::Rgb(15, 75, 110),
+    host_name: Color::Rgb(52, 84, 139),
+    aliases: Color::Rgb(143, 86, 177),
+    user: Color::Rgb(72, 94, 28),             // Dark Green
+    destination: Color::Rgb(15, 75, 110),
+    port: Color::Rgb(150, 80, 20),            // Brown/Orange
+    proxy: Color::Rgb(140, 67, 86),           // Crimson
+    selected_fg: Color::Rgb(240, 242, 248),
+    selected_bg: Color::Rgb(52, 84, 139),
+    cursor_symbol_fg: Color::Rgb(150, 80, 20),
+    badge_bg: Color::Rgb(215, 218, 228),
+    badge_fg: Color::Rgb(52, 84, 139),
+    search_icon_fg: Color::Rgb(150, 80, 20),
+    search_border: Color::Rgb(52, 84, 139),
+    search_text_fg: Color::Rgb(52, 59, 88),
+    footer_key_bg: Color::Rgb(215, 218, 228),
+    footer_key_fg: Color::Rgb(52, 84, 139),
+    footer_desc_fg: Color::Rgb(52, 59, 88),
+};
+
+pub const THEME_ROSE_PINE_MOON: Theme = Theme {
+    name: "rose-pine-moon",
+    display_name: "Rosé Pine Moon",
+    primary: Color::Rgb(235, 188, 186),       // Rose
+    secondary: Color::Rgb(196, 167, 231),     // Iris
+    accent: Color::Rgb(156, 207, 216),        // Foam
+    muted: Color::Rgb(110, 106, 134),
+    border: Color::Rgb(235, 188, 186),
+    border_active: Color::Rgb(196, 167, 231),
+    banner_start: Color::Rgb(235, 188, 186),
+    banner_end: Color::Rgb(196, 167, 231),
+    header_fg: Color::Rgb(224, 222, 244),
+    table_header: Color::Rgb(156, 207, 216),
+    host_name: Color::Rgb(235, 188, 186),
+    aliases: Color::Rgb(196, 167, 231),
+    user: Color::Rgb(62, 143, 176),           // Pine
+    destination: Color::Rgb(156, 207, 216),
+    port: Color::Rgb(246, 193, 119),          // Gold
+    proxy: Color::Rgb(235, 111, 146),         // Love
+    selected_fg: Color::Rgb(35, 33, 54),
+    selected_bg: Color::Rgb(235, 188, 186),
+    cursor_symbol_fg: Color::Rgb(246, 193, 119),
+    badge_bg: Color::Rgb(42, 39, 63),
+    badge_fg: Color::Rgb(235, 188, 186),
+    search_icon_fg: Color::Rgb(246, 193, 119),
+    search_border: Color::Rgb(235, 188, 186),
+    search_text_fg: Color::Rgb(224, 222, 244),
+    footer_key_bg: Color::Rgb(42, 39, 63),
+    footer_key_fg: Color::Rgb(235, 188, 186),
+    footer_desc_fg: Color::Rgb(224, 222, 244),
+};
+
+pub const THEME_ROSE_PINE_DAWN: Theme = Theme {
+    name: "rose-pine-dawn",
+    display_name: "Rosé Pine Dawn",
+    primary: Color::Rgb(215, 130, 126),       // Rose
+    secondary: Color::Rgb(144, 122, 169),     // Iris
+    accent: Color::Rgb(86, 148, 159),         // Foam
+    muted: Color::Rgb(152, 147, 165),
+    border: Color::Rgb(215, 130, 126),
+    border_active: Color::Rgb(144, 122, 169),
+    banner_start: Color::Rgb(215, 130, 126),
+    banner_end: Color::Rgb(144, 122, 169),
+    header_fg: Color::Rgb(87, 82, 121),
+    table_header: Color::Rgb(86, 148, 159),
+    host_name: Color::Rgb(215, 130, 126),
+    aliases: Color::Rgb(144, 122, 169),
+    user: Color::Rgb(40, 105, 131),           // Pine
+    destination: Color::Rgb(86, 148, 159),
+    port: Color::Rgb(234, 157, 52),           // Gold
+    proxy: Color::Rgb(180, 99, 122),          // Love
+    selected_fg: Color::Rgb(250, 244, 237),
+    selected_bg: Color::Rgb(215, 130, 126),
+    cursor_symbol_fg: Color::Rgb(234, 157, 52),
+    badge_bg: Color::Rgb(242, 233, 222),
+    badge_fg: Color::Rgb(215, 130, 126),
+    search_icon_fg: Color::Rgb(234, 157, 52),
+    search_border: Color::Rgb(215, 130, 126),
+    search_text_fg: Color::Rgb(87, 82, 121),
+    footer_key_bg: Color::Rgb(242, 233, 222),
+    footer_key_fg: Color::Rgb(215, 130, 126),
+    footer_desc_fg: Color::Rgb(87, 82, 121),
+};
+
+pub const THEME_GITHUB_DARK: Theme = Theme {
+    name: "github-dark",
+    display_name: "GitHub Dark",
+    primary: Color::Rgb(88, 166, 255),        // Blue
+    secondary: Color::Rgb(210, 168, 255),     // Purple
+    accent: Color::Rgb(56, 139, 253),         // Accent Blue
+    muted: Color::Rgb(110, 118, 129),
+    border: Color::Rgb(88, 166, 255),
+    border_active: Color::Rgb(210, 168, 255),
+    banner_start: Color::Rgb(88, 166, 255),
+    banner_end: Color::Rgb(210, 168, 255),
+    header_fg: Color::Rgb(240, 246, 252),
+    table_header: Color::Rgb(88, 166, 255),
+    host_name: Color::Rgb(88, 166, 255),
+    aliases: Color::Rgb(210, 168, 255),
+    user: Color::Rgb(63, 185, 80),            // Green
+    destination: Color::Rgb(121, 192, 255),
+    port: Color::Rgb(240, 136, 62),           // Orange
+    proxy: Color::Rgb(248, 81, 73),           // Red
+    selected_fg: Color::Rgb(13, 17, 23),
+    selected_bg: Color::Rgb(88, 166, 255),
+    cursor_symbol_fg: Color::Rgb(210, 153, 34),
+    badge_bg: Color::Rgb(22, 27, 34),
+    badge_fg: Color::Rgb(88, 166, 255),
+    search_icon_fg: Color::Rgb(210, 153, 34),
+    search_border: Color::Rgb(88, 166, 255),
+    search_text_fg: Color::Rgb(240, 246, 252),
+    footer_key_bg: Color::Rgb(22, 27, 34),
+    footer_key_fg: Color::Rgb(88, 166, 255),
+    footer_desc_fg: Color::Rgb(240, 246, 252),
+};
+
+pub const THEME_GITHUB_LIGHT: Theme = Theme {
+    name: "github-light",
+    display_name: "GitHub Light",
+    primary: Color::Rgb(9, 105, 218),         // Blue
+    secondary: Color::Rgb(130, 80, 223),      // Purple
+    accent: Color::Rgb(5, 80, 174),
+    muted: Color::Rgb(101, 109, 118),
+    border: Color::Rgb(9, 105, 218),
+    border_active: Color::Rgb(130, 80, 223),
+    banner_start: Color::Rgb(9, 105, 218),
+    banner_end: Color::Rgb(130, 80, 223),
+    header_fg: Color::Rgb(31, 35, 40),
+    table_header: Color::Rgb(9, 105, 218),
+    host_name: Color::Rgb(9, 105, 218),
+    aliases: Color::Rgb(130, 80, 223),
+    user: Color::Rgb(26, 127, 55),            // Green
+    destination: Color::Rgb(9, 105, 218),
+    port: Color::Rgb(188, 76, 0),             // Orange
+    proxy: Color::Rgb(207, 34, 46),           // Red
+    selected_fg: Color::Rgb(255, 255, 255),
+    selected_bg: Color::Rgb(9, 105, 218),
+    cursor_symbol_fg: Color::Rgb(154, 103, 0),
+    badge_bg: Color::Rgb(235, 238, 242),
+    badge_fg: Color::Rgb(9, 105, 218),
+    search_icon_fg: Color::Rgb(154, 103, 0),
+    search_border: Color::Rgb(9, 105, 218),
+    search_text_fg: Color::Rgb(31, 35, 40),
+    footer_key_bg: Color::Rgb(235, 238, 242),
+    footer_key_fg: Color::Rgb(9, 105, 218),
+    footer_desc_fg: Color::Rgb(31, 35, 40),
+};
+
+pub const THEME_HORIZON: Theme = Theme {
+    name: "horizon",
+    display_name: "Horizon",
+    primary: Color::Rgb(233, 92, 108),        // Accent Coral
+    secondary: Color::Rgb(176, 134, 247),     // Lavender
+    accent: Color::Rgb(38, 209, 207),         // Cyan
+    muted: Color::Rgb(108, 109, 120),
+    border: Color::Rgb(233, 92, 108),
+    border_active: Color::Rgb(250, 180, 90),
+    banner_start: Color::Rgb(233, 92, 108),
+    banner_end: Color::Rgb(250, 180, 90),
+    header_fg: Color::Rgb(249, 249, 247),
+    table_header: Color::Rgb(38, 209, 207),
+    host_name: Color::Rgb(233, 92, 108),
+    aliases: Color::Rgb(176, 134, 247),
+    user: Color::Rgb(41, 211, 152),           // Neon Green
+    destination: Color::Rgb(38, 209, 207),
+    port: Color::Rgb(250, 180, 90),           // Sun Gold
+    proxy: Color::Rgb(240, 117, 130),
+    selected_fg: Color::Rgb(28, 30, 38),
+    selected_bg: Color::Rgb(233, 92, 108),
+    cursor_symbol_fg: Color::Rgb(250, 180, 90),
+    badge_bg: Color::Rgb(35, 38, 48),
+    badge_fg: Color::Rgb(233, 92, 108),
+    search_icon_fg: Color::Rgb(250, 180, 90),
+    search_border: Color::Rgb(233, 92, 108),
+    search_text_fg: Color::Rgb(249, 249, 247),
+    footer_key_bg: Color::Rgb(35, 38, 48),
+    footer_key_fg: Color::Rgb(233, 92, 108),
+    footer_desc_fg: Color::Rgb(249, 249, 247),
+};
+
+pub const THEME_POIMANDRES: Theme = Theme {
+    name: "poimandres",
+    display_name: "Poimandres",
+    primary: Color::Rgb(93, 228, 199),        // Mint
+    secondary: Color::Rgb(186, 174, 242),     // Soft Violet
+    accent: Color::Rgb(137, 221, 255),        // Pale Blue
+    muted: Color::Rgb(115, 125, 140),
+    border: Color::Rgb(93, 228, 199),
+    border_active: Color::Rgb(137, 221, 255),
+    banner_start: Color::Rgb(93, 228, 199),
+    banner_end: Color::Rgb(137, 221, 255),
+    header_fg: Color::Rgb(228, 240, 251),
+    table_header: Color::Rgb(137, 221, 255),
+    host_name: Color::Rgb(93, 228, 199),
+    aliases: Color::Rgb(186, 174, 242),
+    user: Color::Rgb(93, 228, 199),
+    destination: Color::Rgb(137, 221, 255),
+    port: Color::Rgb(255, 202, 123),          // Amber
+    proxy: Color::Rgb(208, 103, 157),
+    selected_fg: Color::Rgb(27, 29, 35),
+    selected_bg: Color::Rgb(93, 228, 199),
+    cursor_symbol_fg: Color::Rgb(255, 202, 123),
+    badge_bg: Color::Rgb(37, 40, 48),
+    badge_fg: Color::Rgb(93, 228, 199),
+    search_icon_fg: Color::Rgb(255, 202, 123),
+    search_border: Color::Rgb(93, 228, 199),
+    search_text_fg: Color::Rgb(228, 240, 251),
+    footer_key_bg: Color::Rgb(37, 40, 48),
+    footer_key_fg: Color::Rgb(93, 228, 199),
+    footer_desc_fg: Color::Rgb(228, 240, 251),
+};
+
+pub const THEME_VESPER: Theme = Theme {
+    name: "vesper",
+    display_name: "Vesper",
+    primary: Color::Rgb(255, 199, 153),       // Peach Orange
+    secondary: Color::Rgb(255, 199, 119),     // Amber
+    accent: Color::Rgb(153, 187, 255),        // Sky
+    muted: Color::Rgb(90, 90, 90),
+    border: Color::Rgb(255, 199, 153),
+    border_active: Color::Rgb(255, 199, 119),
+    banner_start: Color::Rgb(255, 199, 153),
+    banner_end: Color::Rgb(255, 199, 119),
+    header_fg: Color::Rgb(255, 255, 255),
+    table_header: Color::Rgb(255, 199, 119),
+    host_name: Color::Rgb(255, 199, 153),
+    aliases: Color::Rgb(153, 187, 255),
+    user: Color::Rgb(153, 238, 187),          // Light Green
+    destination: Color::Rgb(153, 187, 255),
+    port: Color::Rgb(255, 199, 119),
+    proxy: Color::Rgb(255, 153, 153),
+    selected_fg: Color::Rgb(16, 16, 16),
+    selected_bg: Color::Rgb(255, 199, 153),
+    cursor_symbol_fg: Color::Rgb(255, 199, 119),
+    badge_bg: Color::Rgb(35, 35, 35),
+    badge_fg: Color::Rgb(255, 199, 153),
+    search_icon_fg: Color::Rgb(255, 199, 119),
+    search_border: Color::Rgb(255, 199, 153),
+    search_text_fg: Color::Rgb(255, 255, 255),
+    footer_key_bg: Color::Rgb(35, 35, 35),
+    footer_key_fg: Color::Rgb(255, 199, 153),
+    footer_desc_fg: Color::Rgb(255, 255, 255),
+};
+
+pub const THEME_NIGHT_OWL: Theme = Theme {
+    name: "night-owl",
+    display_name: "Night Owl",
+    primary: Color::Rgb(127, 219, 202),       // Cyan
+    secondary: Color::Rgb(199, 146, 234),     // Purple
+    accent: Color::Rgb(236, 196, 141),        // Gold
+    muted: Color::Rgb(95, 126, 155),
+    border: Color::Rgb(127, 219, 202),
+    border_active: Color::Rgb(199, 146, 234),
+    banner_start: Color::Rgb(127, 219, 202),
+    banner_end: Color::Rgb(199, 146, 234),
+    header_fg: Color::Rgb(214, 222, 235),
+    table_header: Color::Rgb(127, 219, 202),
+    host_name: Color::Rgb(127, 219, 202),
+    aliases: Color::Rgb(199, 146, 234),
+    user: Color::Rgb(173, 219, 103),          // Olive Green
+    destination: Color::Rgb(130, 170, 255),   // Blue
+    port: Color::Rgb(247, 140, 108),          // Orange
+    proxy: Color::Rgb(239, 83, 80),           // Red
+    selected_fg: Color::Rgb(1, 22, 39),
+    selected_bg: Color::Rgb(127, 219, 202),
+    cursor_symbol_fg: Color::Rgb(236, 196, 141),
+    badge_bg: Color::Rgb(10, 40, 65),
+    badge_fg: Color::Rgb(127, 219, 202),
+    search_icon_fg: Color::Rgb(236, 196, 141),
+    search_border: Color::Rgb(127, 219, 202),
+    search_text_fg: Color::Rgb(214, 222, 235),
+    footer_key_bg: Color::Rgb(10, 40, 65),
+    footer_key_fg: Color::Rgb(127, 219, 202),
+    footer_desc_fg: Color::Rgb(214, 222, 235),
+};
+
+pub const THEME_COBALT2: Theme = Theme {
+    name: "cobalt2",
+    display_name: "Cobalt2",
+    primary: Color::Rgb(255, 196, 0),         // Cobalt Yellow
+    secondary: Color::Rgb(0, 136, 255),       // Bright Blue
+    accent: Color::Rgb(0, 225, 255),          // Cyan
+    muted: Color::Rgb(80, 110, 140),
+    border: Color::Rgb(255, 196, 0),
+    border_active: Color::Rgb(0, 225, 255),
+    banner_start: Color::Rgb(255, 196, 0),
+    banner_end: Color::Rgb(0, 136, 255),
+    header_fg: Color::Rgb(255, 255, 255),
+    table_header: Color::Rgb(0, 225, 255),
+    host_name: Color::Rgb(255, 196, 0),
+    aliases: Color::Rgb(0, 225, 255),
+    user: Color::Rgb(58, 217, 0),             // Electric Green
+    destination: Color::Rgb(102, 178, 255),
+    port: Color::Rgb(255, 157, 0),            // Orange
+    proxy: Color::Rgb(255, 0, 90),            // Magenta
+    selected_fg: Color::Rgb(20, 40, 60),
+    selected_bg: Color::Rgb(255, 196, 0),
+    cursor_symbol_fg: Color::Rgb(0, 225, 255),
+    badge_bg: Color::Rgb(25, 53, 78),
+    badge_fg: Color::Rgb(255, 196, 0),
+    search_icon_fg: Color::Rgb(255, 196, 0),
+    search_border: Color::Rgb(255, 196, 0),
+    search_text_fg: Color::Rgb(255, 255, 255),
+    footer_key_bg: Color::Rgb(25, 53, 78),
+    footer_key_fg: Color::Rgb(255, 196, 0),
+    footer_desc_fg: Color::Rgb(255, 255, 255),
+};
+
+pub const THEME_PALENIGHT: Theme = Theme {
+    name: "palenight",
+    display_name: "Palenight",
+    primary: Color::Rgb(199, 146, 234),       // Lavender
+    secondary: Color::Rgb(137, 221, 255),     // Sky Cyan
+    accent: Color::Rgb(255, 203, 107),        // Amber
+    muted: Color::Rgb(103, 110, 149),
+    border: Color::Rgb(199, 146, 234),
+    border_active: Color::Rgb(137, 221, 255),
+    banner_start: Color::Rgb(199, 146, 234),
+    banner_end: Color::Rgb(137, 221, 255),
+    header_fg: Color::Rgb(191, 199, 213),
+    table_header: Color::Rgb(137, 221, 255),
+    host_name: Color::Rgb(199, 146, 234),
+    aliases: Color::Rgb(137, 221, 255),
+    user: Color::Rgb(195, 232, 141),          // Mint
+    destination: Color::Rgb(130, 170, 255),
+    port: Color::Rgb(247, 140, 108),          // Peach
+    proxy: Color::Rgb(255, 83, 112),          // Coral
+    selected_fg: Color::Rgb(41, 45, 62),
+    selected_bg: Color::Rgb(199, 146, 234),
+    cursor_symbol_fg: Color::Rgb(255, 203, 107),
+    badge_bg: Color::Rgb(51, 55, 78),
+    badge_fg: Color::Rgb(199, 146, 234),
+    search_icon_fg: Color::Rgb(255, 203, 107),
+    search_border: Color::Rgb(199, 146, 234),
+    search_text_fg: Color::Rgb(191, 199, 213),
+    footer_key_bg: Color::Rgb(51, 55, 78),
+    footer_key_fg: Color::Rgb(199, 146, 234),
+    footer_desc_fg: Color::Rgb(191, 199, 213),
+};
+
+pub const THEME_LASERWAVE: Theme = Theme {
+    name: "laserwave",
+    display_name: "LaserWave",
+    primary: Color::Rgb(235, 100, 160),       // Hot Pink
+    secondary: Color::Rgb(116, 238, 238),     // Neon Cyan
+    accent: Color::Rgb(180, 140, 255),        // Violet
+    muted: Color::Rgb(110, 95, 140),
+    border: Color::Rgb(235, 100, 160),
+    border_active: Color::Rgb(116, 238, 238),
+    banner_start: Color::Rgb(235, 100, 160),
+    banner_end: Color::Rgb(116, 238, 238),
+    header_fg: Color::Rgb(255, 255, 255),
+    table_header: Color::Rgb(116, 238, 238),
+    host_name: Color::Rgb(235, 100, 160),
+    aliases: Color::Rgb(180, 140, 255),
+    user: Color::Rgb(180, 255, 150),          // Neon Lime
+    destination: Color::Rgb(116, 238, 238),
+    port: Color::Rgb(255, 230, 109),          // Yellow
+    proxy: Color::Rgb(255, 120, 120),
+    selected_fg: Color::Rgb(27, 24, 41),
+    selected_bg: Color::Rgb(235, 100, 160),
+    cursor_symbol_fg: Color::Rgb(255, 230, 109),
+    badge_bg: Color::Rgb(45, 35, 65),
+    badge_fg: Color::Rgb(235, 100, 160),
+    search_icon_fg: Color::Rgb(116, 238, 238),
+    search_border: Color::Rgb(235, 100, 160),
+    search_text_fg: Color::Rgb(255, 255, 255),
+    footer_key_bg: Color::Rgb(45, 35, 65),
+    footer_key_fg: Color::Rgb(235, 100, 160),
+    footer_desc_fg: Color::Rgb(255, 255, 255),
+};
+
+pub const THEME_SHADES_OF_PURPLE: Theme = Theme {
+    name: "shades-of-purple",
+    display_name: "Shades of Purple",
+    primary: Color::Rgb(250, 208, 0),         // Super Yellow
+    secondary: Color::Rgb(179, 98, 255),      // Purple
+    accent: Color::Rgb(0, 241, 255),          // Cyan
+    muted: Color::Rgb(130, 120, 180),
+    border: Color::Rgb(250, 208, 0),
+    border_active: Color::Rgb(0, 241, 255),
+    banner_start: Color::Rgb(250, 208, 0),
+    banner_end: Color::Rgb(179, 98, 255),
+    header_fg: Color::Rgb(255, 255, 255),
+    table_header: Color::Rgb(0, 241, 255),
+    host_name: Color::Rgb(250, 208, 0),
+    aliases: Color::Rgb(179, 98, 255),
+    user: Color::Rgb(165, 255, 18),           // Neon Green
+    destination: Color::Rgb(0, 241, 255),
+    port: Color::Rgb(255, 157, 0),            // Orange
+    proxy: Color::Rgb(255, 98, 142),          // Pink
+    selected_fg: Color::Rgb(45, 43, 85),
+    selected_bg: Color::Rgb(250, 208, 0),
+    cursor_symbol_fg: Color::Rgb(0, 241, 255),
+    badge_bg: Color::Rgb(55, 50, 105),
+    badge_fg: Color::Rgb(250, 208, 0),
+    search_icon_fg: Color::Rgb(250, 208, 0),
+    search_border: Color::Rgb(250, 208, 0),
+    search_text_fg: Color::Rgb(255, 255, 255),
+    footer_key_bg: Color::Rgb(55, 50, 105),
+    footer_key_fg: Color::Rgb(250, 208, 0),
+    footer_desc_fg: Color::Rgb(255, 255, 255),
+};
+
+pub const THEME_AURA: Theme = Theme {
+    name: "aura",
+    display_name: "Aura",
+    primary: Color::Rgb(162, 119, 255),       // Purple
+    secondary: Color::Rgb(97, 255, 202),      // Green
+    accent: Color::Rgb(246, 152, 237),        // Pink
+    muted: Color::Rgb(110, 100, 130),
+    border: Color::Rgb(162, 119, 255),
+    border_active: Color::Rgb(97, 255, 202),
+    banner_start: Color::Rgb(162, 119, 255),
+    banner_end: Color::Rgb(97, 255, 202),
+    header_fg: Color::Rgb(237, 236, 238),
+    table_header: Color::Rgb(97, 255, 202),
+    host_name: Color::Rgb(162, 119, 255),
+    aliases: Color::Rgb(246, 152, 237),
+    user: Color::Rgb(97, 255, 202),
+    destination: Color::Rgb(108, 224, 255),   // Cyan
+    port: Color::Rgb(255, 202, 133),          // Orange
+    proxy: Color::Rgb(255, 103, 103),         // Red
+    selected_fg: Color::Rgb(21, 20, 27),
+    selected_bg: Color::Rgb(162, 119, 255),
+    cursor_symbol_fg: Color::Rgb(97, 255, 202),
+    badge_bg: Color::Rgb(35, 30, 48),
+    badge_fg: Color::Rgb(162, 119, 255),
+    search_icon_fg: Color::Rgb(97, 255, 202),
+    search_border: Color::Rgb(162, 119, 255),
+    search_text_fg: Color::Rgb(237, 236, 238),
+    footer_key_bg: Color::Rgb(35, 30, 48),
+    footer_key_fg: Color::Rgb(162, 119, 255),
+    footer_desc_fg: Color::Rgb(237, 236, 238),
+};
+
+pub const THEME_MOONLIGHT: Theme = Theme {
+    name: "moonlight",
+    display_name: "Moonlight",
+    primary: Color::Rgb(68, 241, 233),        // Turquoise
+    secondary: Color::Rgb(192, 153, 255),     // Violet
+    accent: Color::Rgb(134, 225, 254),        // Sky
+    muted: Color::Rgb(90, 100, 140),
+    border: Color::Rgb(68, 241, 233),
+    border_active: Color::Rgb(192, 153, 255),
+    banner_start: Color::Rgb(68, 241, 233),
+    banner_end: Color::Rgb(192, 153, 255),
+    header_fg: Color::Rgb(192, 202, 245),
+    table_header: Color::Rgb(134, 225, 254),
+    host_name: Color::Rgb(68, 241, 233),
+    aliases: Color::Rgb(192, 153, 255),
+    user: Color::Rgb(139, 233, 253),
+    destination: Color::Rgb(134, 225, 254),
+    port: Color::Rgb(255, 201, 107),          // Gold
+    proxy: Color::Rgb(255, 117, 127),         // Coral
+    selected_fg: Color::Rgb(33, 35, 54),
+    selected_bg: Color::Rgb(68, 241, 233),
+    cursor_symbol_fg: Color::Rgb(255, 201, 107),
+    badge_bg: Color::Rgb(40, 45, 70),
+    badge_fg: Color::Rgb(68, 241, 233),
+    search_icon_fg: Color::Rgb(68, 241, 233),
+    search_border: Color::Rgb(68, 241, 233),
+    search_text_fg: Color::Rgb(192, 202, 245),
+    footer_key_bg: Color::Rgb(40, 45, 70),
+    footer_key_fg: Color::Rgb(68, 241, 233),
+    footer_desc_fg: Color::Rgb(192, 202, 245),
+};
+
+pub const THEME_OXOCARBON: Theme = Theme {
+    name: "oxocarbon",
+    display_name: "Oxocarbon",
+    primary: Color::Rgb(255, 126, 182),       // Pink
+    secondary: Color::Rgb(61, 219, 217),      // Cyan
+    accent: Color::Rgb(190, 149, 255),        // Purple
+    muted: Color::Rgb(82, 82, 82),
+    border: Color::Rgb(255, 126, 182),
+    border_active: Color::Rgb(61, 219, 217),
+    banner_start: Color::Rgb(255, 126, 182),
+    banner_end: Color::Rgb(61, 219, 217),
+    header_fg: Color::Rgb(244, 244, 244),
+    table_header: Color::Rgb(61, 219, 217),
+    host_name: Color::Rgb(255, 126, 182),
+    aliases: Color::Rgb(190, 149, 255),
+    user: Color::Rgb(66, 190, 101),           // Turquoise Green
+    destination: Color::Rgb(61, 219, 217),
+    port: Color::Rgb(255, 180, 100),
+    proxy: Color::Rgb(238, 83, 150),
+    selected_fg: Color::Rgb(22, 22, 22),
+    selected_bg: Color::Rgb(255, 126, 182),
+    cursor_symbol_fg: Color::Rgb(61, 219, 217),
+    badge_bg: Color::Rgb(38, 38, 38),
+    badge_fg: Color::Rgb(255, 126, 182),
+    search_icon_fg: Color::Rgb(61, 219, 217),
+    search_border: Color::Rgb(255, 126, 182),
+    search_text_fg: Color::Rgb(244, 244, 244),
+    footer_key_bg: Color::Rgb(38, 38, 38),
+    footer_key_fg: Color::Rgb(255, 126, 182),
+    footer_desc_fg: Color::Rgb(244, 244, 244),
+};
+
+pub const THEME_FLEXOKI_DARK: Theme = Theme {
+    name: "flexoki-dark",
+    display_name: "Flexoki Dark",
+    primary: Color::Rgb(218, 112, 44),        // Orange
+    secondary: Color::Rgb(135, 154, 57),      // Green
+    accent: Color::Rgb(36, 131, 123),         // Cyan
+    muted: Color::Rgb(102, 100, 94),
+    border: Color::Rgb(218, 112, 44),
+    border_active: Color::Rgb(135, 154, 57),
+    banner_start: Color::Rgb(218, 112, 44),
+    banner_end: Color::Rgb(135, 154, 57),
+    header_fg: Color::Rgb(206, 205, 195),
+    table_header: Color::Rgb(36, 131, 123),
+    host_name: Color::Rgb(218, 112, 44),
+    aliases: Color::Rgb(139, 125, 178),       // Purple
+    user: Color::Rgb(135, 154, 57),
+    destination: Color::Rgb(67, 133, 190),    // Blue
+    port: Color::Rgb(208, 162, 21),           // Yellow
+    proxy: Color::Rgb(209, 77, 65),           // Red
+    selected_fg: Color::Rgb(16, 15, 15),
+    selected_bg: Color::Rgb(218, 112, 44),
+    cursor_symbol_fg: Color::Rgb(208, 162, 21),
+    badge_bg: Color::Rgb(40, 39, 38),
+    badge_fg: Color::Rgb(218, 112, 44),
+    search_icon_fg: Color::Rgb(208, 162, 21),
+    search_border: Color::Rgb(218, 112, 44),
+    search_text_fg: Color::Rgb(206, 205, 195),
+    footer_key_bg: Color::Rgb(40, 39, 38),
+    footer_key_fg: Color::Rgb(218, 112, 44),
+    footer_desc_fg: Color::Rgb(206, 205, 195),
+};
+
+pub const THEME_FLEXOKI_LIGHT: Theme = Theme {
+    name: "flexoki-light",
+    display_name: "Flexoki Light",
+    primary: Color::Rgb(188, 82, 21),         // Orange
+    secondary: Color::Rgb(102, 128, 11),      // Green
+    accent: Color::Rgb(36, 131, 123),         // Cyan
+    muted: Color::Rgb(135, 133, 128),
+    border: Color::Rgb(188, 82, 21),
+    border_active: Color::Rgb(102, 128, 11),
+    banner_start: Color::Rgb(188, 82, 21),
+    banner_end: Color::Rgb(102, 128, 11),
+    header_fg: Color::Rgb(16, 15, 15),
+    table_header: Color::Rgb(36, 131, 123),
+    host_name: Color::Rgb(188, 82, 21),
+    aliases: Color::Rgb(94, 64, 157),         // Purple
+    user: Color::Rgb(102, 128, 11),
+    destination: Color::Rgb(32, 94, 166),     // Blue
+    port: Color::Rgb(173, 131, 1),            // Yellow
+    proxy: Color::Rgb(175, 48, 41),           // Red
+    selected_fg: Color::Rgb(255, 252, 240),
+    selected_bg: Color::Rgb(188, 82, 21),
+    cursor_symbol_fg: Color::Rgb(173, 131, 1),
+    badge_bg: Color::Rgb(242, 238, 223),
+    badge_fg: Color::Rgb(188, 82, 21),
+    search_icon_fg: Color::Rgb(173, 131, 1),
+    search_border: Color::Rgb(188, 82, 21),
+    search_text_fg: Color::Rgb(16, 15, 15),
+    footer_key_bg: Color::Rgb(242, 238, 223),
+    footer_key_fg: Color::Rgb(188, 82, 21),
+    footer_desc_fg: Color::Rgb(16, 15, 15),
+};
+
+pub const THEME_ZENBURN: Theme = Theme {
+    name: "zenburn",
+    display_name: "Zenburn",
+    primary: Color::Rgb(240, 223, 175),       // Khaki Yellow
+    secondary: Color::Rgb(140, 208, 211),     // Sky
+    accent: Color::Rgb(127, 159, 127),        // Sage
+    muted: Color::Rgb(127, 127, 127),
+    border: Color::Rgb(240, 223, 175),
+    border_active: Color::Rgb(140, 208, 211),
+    banner_start: Color::Rgb(240, 223, 175),
+    banner_end: Color::Rgb(140, 208, 211),
+    header_fg: Color::Rgb(220, 220, 204),
+    table_header: Color::Rgb(140, 208, 211),
+    host_name: Color::Rgb(240, 223, 175),
+    aliases: Color::Rgb(220, 163, 163),       // Rose
+    user: Color::Rgb(127, 159, 127),
+    destination: Color::Rgb(140, 208, 211),
+    port: Color::Rgb(223, 175, 143),          // Orange
+    proxy: Color::Rgb(204, 147, 147),
+    selected_fg: Color::Rgb(47, 47, 47),
+    selected_bg: Color::Rgb(240, 223, 175),
+    cursor_symbol_fg: Color::Rgb(223, 175, 143),
+    badge_bg: Color::Rgb(79, 79, 79),
+    badge_fg: Color::Rgb(240, 223, 175),
+    search_icon_fg: Color::Rgb(240, 223, 175),
+    search_border: Color::Rgb(240, 223, 175),
+    search_text_fg: Color::Rgb(220, 220, 204),
+    footer_key_bg: Color::Rgb(79, 79, 79),
+    footer_key_fg: Color::Rgb(240, 223, 175),
+    footer_desc_fg: Color::Rgb(220, 220, 204),
+};
+
+pub const THEME_DOOM_ONE: Theme = Theme {
+    name: "doom-one",
+    display_name: "Doom One",
+    primary: Color::Rgb(81, 175, 239),        // Blue
+    secondary: Color::Rgb(198, 120, 221),     // Magenta
+    accent: Color::Rgb(70, 209, 217),         // Cyan
+    muted: Color::Rgb(91, 98, 114),
+    border: Color::Rgb(81, 175, 239),
+    border_active: Color::Rgb(198, 120, 221),
+    banner_start: Color::Rgb(81, 175, 239),
+    banner_end: Color::Rgb(198, 120, 221),
+    header_fg: Color::Rgb(187, 194, 207),
+    table_header: Color::Rgb(70, 209, 217),
+    host_name: Color::Rgb(81, 175, 239),
+    aliases: Color::Rgb(198, 120, 221),
+    user: Color::Rgb(152, 190, 101),          // Green
+    destination: Color::Rgb(70, 209, 217),
+    port: Color::Rgb(218, 133, 74),           // Orange
+    proxy: Color::Rgb(255, 108, 136),         // Red
+    selected_fg: Color::Rgb(40, 44, 52),
+    selected_bg: Color::Rgb(81, 175, 239),
+    cursor_symbol_fg: Color::Rgb(236, 190, 123),
+    badge_bg: Color::Rgb(45, 52, 64),
+    badge_fg: Color::Rgb(81, 175, 239),
+    search_icon_fg: Color::Rgb(236, 190, 123),
+    search_border: Color::Rgb(81, 175, 239),
+    search_text_fg: Color::Rgb(187, 194, 207),
+    footer_key_bg: Color::Rgb(45, 52, 64),
+    footer_key_fg: Color::Rgb(81, 175, 239),
+    footer_desc_fg: Color::Rgb(187, 194, 207),
+};
+
+pub const THEME_AQUARIUM: Theme = Theme {
+    name: "aquarium",
+    display_name: "Aquarium",
+    primary: Color::Rgb(99, 181, 234),        // Ocean Blue
+    secondary: Color::Rgb(184, 156, 219),     // Orchid
+    accent: Color::Rgb(164, 214, 180),        // Seafoam
+    muted: Color::Rgb(99, 110, 135),
+    border: Color::Rgb(99, 181, 234),
+    border_active: Color::Rgb(184, 156, 219),
+    banner_start: Color::Rgb(99, 181, 234),
+    banner_end: Color::Rgb(184, 156, 219),
+    header_fg: Color::Rgb(235, 240, 245),
+    table_header: Color::Rgb(164, 214, 180),
+    host_name: Color::Rgb(99, 181, 234),
+    aliases: Color::Rgb(184, 156, 219),
+    user: Color::Rgb(164, 214, 180),
+    destination: Color::Rgb(99, 181, 234),
+    port: Color::Rgb(230, 197, 140),          // Sunlight
+    proxy: Color::Rgb(235, 142, 154),         // Coral
+    selected_fg: Color::Rgb(32, 37, 51),
+    selected_bg: Color::Rgb(99, 181, 234),
+    cursor_symbol_fg: Color::Rgb(230, 197, 140),
+    badge_bg: Color::Rgb(45, 52, 72),
+    badge_fg: Color::Rgb(99, 181, 234),
+    search_icon_fg: Color::Rgb(230, 197, 140),
+    search_border: Color::Rgb(99, 181, 234),
+    search_text_fg: Color::Rgb(235, 240, 245),
+    footer_key_bg: Color::Rgb(45, 52, 72),
+    footer_key_fg: Color::Rgb(99, 181, 234),
+    footer_desc_fg: Color::Rgb(235, 240, 245),
+};
+
+pub const THEME_GRUVBOX_LIGHT: Theme = Theme {
+    name: "gruvbox-light",
+    display_name: "Gruvbox Light",
+    primary: Color::Rgb(175, 58, 3),          // Rust Orange
+    secondary: Color::Rgb(143, 63, 113),      // Purple
+    accent: Color::Rgb(69, 133, 136),         // Blue
+    muted: Color::Rgb(146, 131, 116),
+    border: Color::Rgb(175, 58, 3),
+    border_active: Color::Rgb(181, 118, 20),
+    banner_start: Color::Rgb(175, 58, 3),
+    banner_end: Color::Rgb(181, 118, 20),
+    header_fg: Color::Rgb(60, 56, 54),
+    table_header: Color::Rgb(69, 133, 136),
+    host_name: Color::Rgb(175, 58, 3),
+    aliases: Color::Rgb(143, 63, 113),
+    user: Color::Rgb(121, 116, 14),           // Green
+    destination: Color::Rgb(69, 133, 136),
+    port: Color::Rgb(181, 118, 20),           // Yellow
+    proxy: Color::Rgb(157, 0, 6),             // Red
+    selected_fg: Color::Rgb(251, 241, 199),
+    selected_bg: Color::Rgb(175, 58, 3),
+    cursor_symbol_fg: Color::Rgb(181, 118, 20),
+    badge_bg: Color::Rgb(235, 219, 178),
+    badge_fg: Color::Rgb(175, 58, 3),
+    search_icon_fg: Color::Rgb(181, 118, 20),
+    search_border: Color::Rgb(175, 58, 3),
+    search_text_fg: Color::Rgb(60, 56, 54),
+    footer_key_bg: Color::Rgb(235, 219, 178),
+    footer_key_fg: Color::Rgb(175, 58, 3),
+    footer_desc_fg: Color::Rgb(60, 56, 54),
+};
+
+pub const THEME_SOLARIZED_LIGHT: Theme = Theme {
+    name: "solarized-light",
+    display_name: "Solarized Light",
+    primary: Color::Rgb(38, 139, 210),        // Blue
+    secondary: Color::Rgb(211, 54, 130),      // Magenta
+    accent: Color::Rgb(42, 161, 152),         // Cyan
+    muted: Color::Rgb(147, 161, 161),
+    border: Color::Rgb(38, 139, 210),
+    border_active: Color::Rgb(211, 54, 130),
+    banner_start: Color::Rgb(38, 139, 210),
+    banner_end: Color::Rgb(42, 161, 152),
+    header_fg: Color::Rgb(101, 123, 131),
+    table_header: Color::Rgb(42, 161, 152),
+    host_name: Color::Rgb(38, 139, 210),
+    aliases: Color::Rgb(211, 54, 130),
+    user: Color::Rgb(133, 153, 0),            // Green
+    destination: Color::Rgb(42, 161, 152),
+    port: Color::Rgb(181, 137, 0),            // Yellow
+    proxy: Color::Rgb(203, 75, 22),           // Orange
+    selected_fg: Color::Rgb(253, 246, 227),
+    selected_bg: Color::Rgb(38, 139, 210),
+    cursor_symbol_fg: Color::Rgb(181, 137, 0),
+    badge_bg: Color::Rgb(238, 232, 213),
+    badge_fg: Color::Rgb(38, 139, 210),
+    search_icon_fg: Color::Rgb(181, 137, 0),
+    search_border: Color::Rgb(38, 139, 210),
+    search_text_fg: Color::Rgb(101, 123, 131),
+    footer_key_bg: Color::Rgb(238, 232, 213),
+    footer_key_fg: Color::Rgb(38, 139, 210),
+    footer_desc_fg: Color::Rgb(101, 123, 131),
+};
+
+pub const THEME_MATERIAL_OCEAN: Theme = Theme {
+    name: "material-ocean",
+    display_name: "Material Ocean",
+    primary: Color::Rgb(130, 170, 255),       // Blue
+    secondary: Color::Rgb(199, 146, 234),     // Purple
+    accent: Color::Rgb(142, 255, 235),        // Neon Cyan
+    muted: Color::Rgb(70, 75, 95),
+    border: Color::Rgb(130, 170, 255),
+    border_active: Color::Rgb(142, 255, 235),
+    banner_start: Color::Rgb(130, 170, 255),
+    banner_end: Color::Rgb(142, 255, 235),
+    header_fg: Color::Rgb(238, 255, 255),
+    table_header: Color::Rgb(142, 255, 235),
+    host_name: Color::Rgb(130, 170, 255),
+    aliases: Color::Rgb(199, 146, 234),
+    user: Color::Rgb(195, 232, 141),          // Green
+    destination: Color::Rgb(142, 255, 235),
+    port: Color::Rgb(255, 203, 107),          // Yellow
+    proxy: Color::Rgb(255, 83, 112),          // Coral
+    selected_fg: Color::Rgb(15, 17, 26),
+    selected_bg: Color::Rgb(130, 170, 255),
+    cursor_symbol_fg: Color::Rgb(255, 203, 107),
+    badge_bg: Color::Rgb(28, 32, 48),
+    badge_fg: Color::Rgb(130, 170, 255),
+    search_icon_fg: Color::Rgb(142, 255, 235),
+    search_border: Color::Rgb(130, 170, 255),
+    search_text_fg: Color::Rgb(238, 255, 255),
+    footer_key_bg: Color::Rgb(28, 32, 48),
+    footer_key_fg: Color::Rgb(130, 170, 255),
+    footer_desc_fg: Color::Rgb(238, 255, 255),
+};
+
+pub const THEME_MATERIAL_DARKER: Theme = Theme {
+    name: "material-darker",
+    display_name: "Material Darker",
+    primary: Color::Rgb(247, 140, 108),       // Orange
+    secondary: Color::Rgb(137, 221, 255),     // Cyan
+    accent: Color::Rgb(199, 146, 234),        // Purple
+    muted: Color::Rgb(97, 97, 97),
+    border: Color::Rgb(247, 140, 108),
+    border_active: Color::Rgb(137, 221, 255),
+    banner_start: Color::Rgb(247, 140, 108),
+    banner_end: Color::Rgb(137, 221, 255),
+    header_fg: Color::Rgb(238, 255, 255),
+    table_header: Color::Rgb(137, 221, 255),
+    host_name: Color::Rgb(247, 140, 108),
+    aliases: Color::Rgb(199, 146, 234),
+    user: Color::Rgb(195, 232, 141),          // Green
+    destination: Color::Rgb(137, 221, 255),
+    port: Color::Rgb(255, 203, 107),          // Yellow
+    proxy: Color::Rgb(255, 83, 112),          // Red
+    selected_fg: Color::Rgb(33, 33, 33),
+    selected_bg: Color::Rgb(247, 140, 108),
+    cursor_symbol_fg: Color::Rgb(255, 203, 107),
+    badge_bg: Color::Rgb(48, 48, 48),
+    badge_fg: Color::Rgb(247, 140, 108),
+    search_icon_fg: Color::Rgb(255, 203, 107),
+    search_border: Color::Rgb(247, 140, 108),
+    search_text_fg: Color::Rgb(238, 255, 255),
+    footer_key_bg: Color::Rgb(48, 48, 48),
+    footer_key_fg: Color::Rgb(247, 140, 108),
+    footer_desc_fg: Color::Rgb(238, 255, 255),
+};
+
+pub const THEME_BASE16_DARK: Theme = Theme {
+    name: "base16",
+    display_name: "Base16 Dark",
+    primary: Color::Rgb(124, 175, 194),       // Blue
+    secondary: Color::Rgb(161, 110, 167),     // Magenta
+    accent: Color::Rgb(134, 193, 185),        // Cyan
+    muted: Color::Rgb(88, 88, 88),
+    border: Color::Rgb(124, 175, 194),
+    border_active: Color::Rgb(161, 110, 167),
+    banner_start: Color::Rgb(124, 175, 194),
+    banner_end: Color::Rgb(161, 110, 167),
+    header_fg: Color::Rgb(216, 216, 216),
+    table_header: Color::Rgb(134, 193, 185),
+    host_name: Color::Rgb(124, 175, 194),
+    aliases: Color::Rgb(161, 110, 167),
+    user: Color::Rgb(144, 169, 89),           // Green
+    destination: Color::Rgb(134, 193, 185),
+    port: Color::Rgb(244, 207, 142),          // Yellow
+    proxy: Color::Rgb(171, 70, 66),           // Red
+    selected_fg: Color::Rgb(24, 24, 24),
+    selected_bg: Color::Rgb(124, 175, 194),
+    cursor_symbol_fg: Color::Rgb(244, 207, 142),
+    badge_bg: Color::Rgb(40, 40, 40),
+    badge_fg: Color::Rgb(124, 175, 194),
+    search_icon_fg: Color::Rgb(244, 207, 142),
+    search_border: Color::Rgb(124, 175, 194),
+    search_text_fg: Color::Rgb(216, 216, 216),
+    footer_key_bg: Color::Rgb(40, 40, 40),
+    footer_key_fg: Color::Rgb(124, 175, 194),
+    footer_desc_fg: Color::Rgb(216, 216, 216),
+};
+
+pub const THEME_DRACULA_SOFT: Theme = Theme {
+    name: "dracula-soft",
+    display_name: "Dracula Soft",
+    primary: Color::Rgb(189, 147, 249),       // Purple
+    secondary: Color::Rgb(255, 121, 198),     // Pink
+    accent: Color::Rgb(139, 233, 253),        // Cyan
+    muted: Color::Rgb(98, 114, 164),
+    border: Color::Rgb(189, 147, 249),
+    border_active: Color::Rgb(255, 121, 198),
+    banner_start: Color::Rgb(189, 147, 249),
+    banner_end: Color::Rgb(255, 121, 198),
+    header_fg: Color::Rgb(248, 248, 242),
+    table_header: Color::Rgb(139, 233, 253),
+    host_name: Color::Rgb(189, 147, 249),
+    aliases: Color::Rgb(255, 121, 198),
+    user: Color::Rgb(80, 250, 123),           // Green
+    destination: Color::Rgb(139, 233, 253),
+    port: Color::Rgb(241, 250, 140),          // Yellow
+    proxy: Color::Rgb(255, 184, 108),         // Orange
+    selected_fg: Color::Rgb(40, 42, 54),
+    selected_bg: Color::Rgb(189, 147, 249),
+    cursor_symbol_fg: Color::Rgb(241, 250, 140),
+    badge_bg: Color::Rgb(55, 58, 75),
+    badge_fg: Color::Rgb(189, 147, 249),
+    search_icon_fg: Color::Rgb(139, 233, 253),
+    search_border: Color::Rgb(189, 147, 249),
+    search_text_fg: Color::Rgb(248, 248, 242),
+    footer_key_bg: Color::Rgb(55, 58, 75),
+    footer_key_fg: Color::Rgb(189, 147, 249),
+    footer_desc_fg: Color::Rgb(248, 248, 242),
+};
+
 /// Generates a full `Theme` from any Tailwind palette name.
 #[must_use]
 pub fn theme_from_tailwind(name: &'static str, p: tailwind::Palette) -> Theme {
@@ -862,17 +1822,47 @@ pub fn theme_from_tailwind(name: &'static str, p: tailwind::Palette) -> Theme {
 /// All available themes in order for cycling.
 pub const ALL_THEMES: &[&str] = &[
     "catppuccin",
+    "catppuccin-macchiato",
+    "catppuccin-frappe",
     "catppuccin-latte",
     "dracula",
+    "dracula-soft",
     "tokyonight",
+    "tokyonight-storm",
+    "tokyonight-light",
     "nord",
     "gruvbox",
+    "gruvbox-light",
     "rose-pine",
+    "rose-pine-moon",
+    "rose-pine-dawn",
     "onedark",
     "kanagawa",
     "everforest",
     "solarized-dark",
+    "solarized-light",
     "ayu-dark",
+    "github-dark",
+    "github-light",
+    "horizon",
+    "poimandres",
+    "vesper",
+    "night-owl",
+    "cobalt2",
+    "palenight",
+    "laserwave",
+    "shades-of-purple",
+    "aura",
+    "moonlight",
+    "oxocarbon",
+    "flexoki-dark",
+    "flexoki-light",
+    "zenburn",
+    "doom-one",
+    "aquarium",
+    "material-ocean",
+    "material-darker",
+    "base16",
     "cyberpunk",
     "synthwave",
     "matrix",
@@ -913,17 +1903,47 @@ pub const ALL_THEMES: &[&str] = &[
 pub fn theme_by_name(name: &str) -> Result<Theme> {
     match name.to_lowercase().as_str() {
         "catppuccin" | "catppuccin-mocha" | "mocha" => Ok(THEME_CATPPUCCIN),
+        "catppuccin-macchiato" | "macchiato" => Ok(THEME_CATPPUCCIN_MACCHIATO),
+        "catppuccin-frappe" | "frappe" => Ok(THEME_CATPPUCCIN_FRAPPE),
         "catppuccin-latte" | "latte" => Ok(THEME_CATPPUCCIN_LATTE),
         "dracula" => Ok(THEME_DRACULA),
+        "dracula-soft" => Ok(THEME_DRACULA_SOFT),
         "tokyonight" | "tokyo-night" | "tokyo" => Ok(THEME_TOKYONIGHT),
+        "tokyonight-storm" | "tokyo-storm" => Ok(THEME_TOKYONIGHT_STORM),
+        "tokyonight-light" | "tokyo-light" => Ok(THEME_TOKYONIGHT_LIGHT),
         "nord" => Ok(THEME_NORD),
         "gruvbox" | "gruvbox-dark" => Ok(THEME_GRUVBOX),
+        "gruvbox-light" => Ok(THEME_GRUVBOX_LIGHT),
         "rose-pine" | "rosepine" => Ok(THEME_ROSE_PINE),
+        "rose-pine-moon" | "rosepine-moon" => Ok(THEME_ROSE_PINE_MOON),
+        "rose-pine-dawn" | "rosepine-dawn" => Ok(THEME_ROSE_PINE_DAWN),
         "onedark" | "one-dark" => Ok(THEME_ONEDARK),
         "kanagawa" => Ok(THEME_KANAGAWA),
         "everforest" => Ok(THEME_EVERFOREST),
         "solarized" | "solarized-dark" => Ok(THEME_SOLARIZED_DARK),
+        "solarized-light" => Ok(THEME_SOLARIZED_LIGHT),
         "ayu" | "ayu-dark" => Ok(THEME_AYU_DARK),
+        "github-dark" | "github" => Ok(THEME_GITHUB_DARK),
+        "github-light" => Ok(THEME_GITHUB_LIGHT),
+        "horizon" => Ok(THEME_HORIZON),
+        "poimandres" => Ok(THEME_POIMANDRES),
+        "vesper" => Ok(THEME_VESPER),
+        "night-owl" | "nightowl" => Ok(THEME_NIGHT_OWL),
+        "cobalt2" | "cobalt" => Ok(THEME_COBALT2),
+        "palenight" => Ok(THEME_PALENIGHT),
+        "laserwave" => Ok(THEME_LASERWAVE),
+        "shades-of-purple" | "purple-shades" => Ok(THEME_SHADES_OF_PURPLE),
+        "aura" => Ok(THEME_AURA),
+        "moonlight" => Ok(THEME_MOONLIGHT),
+        "oxocarbon" => Ok(THEME_OXOCARBON),
+        "flexoki-dark" | "flexoki" => Ok(THEME_FLEXOKI_DARK),
+        "flexoki-light" => Ok(THEME_FLEXOKI_LIGHT),
+        "zenburn" => Ok(THEME_ZENBURN),
+        "doom-one" | "doom" => Ok(THEME_DOOM_ONE),
+        "aquarium" => Ok(THEME_AQUARIUM),
+        "material-ocean" => Ok(THEME_MATERIAL_OCEAN),
+        "material-darker" => Ok(THEME_MATERIAL_DARKER),
+        "base16" | "base16-dark" => Ok(THEME_BASE16_DARK),
         "cyberpunk" | "neon" => Ok(THEME_CYBERPUNK),
         "synthwave" | "synthwave84" => Ok(THEME_SYNTHWAVE),
         "matrix" => Ok(THEME_MATRIX),

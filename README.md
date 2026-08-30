@@ -123,17 +123,28 @@ The binary will be located at `./target/release/sshs` once the build is complete
 
 ### 🎨 Themes & Colors
 
-`sshs` includes modern curated color themes as well as support for all 22 Tailwind color palettes.
+`sshs` includes **51 modern curated color themes** as well as support for all 22 Tailwind color palettes.
 
 You can select a theme on startup using `--theme` (or `--color`):
 
 ```shell
-# Curated Themes: catppuccin, catppuccin-latte, dracula, tokyonight, nord, gruvbox,
-#                 rose-pine, onedark, kanagawa, everforest, solarized-dark, ayu-dark,
-#                 cyberpunk, synthwave, matrix, hacker-amber, sunset, monokai, ocean, crimson, lavender
+# Curated Themes:
+#   Catppuccin:  catppuccin (mocha), catppuccin-macchiato, catppuccin-frappe, catppuccin-latte
+#   Tokyo Night: tokyonight, tokyonight-storm, tokyonight-light
+#   Rosé Pine:   rose-pine, rose-pine-moon, rose-pine-dawn
+#   GitHub:      github-dark, github-light
+#   Solarized:   solarized-dark, solarized-light
+#   Gruvbox:     gruvbox, gruvbox-light
+#   Flexoki:     flexoki-dark, flexoki-light
+#   Material:    material-ocean, material-darker
+#   Classics:    dracula, dracula-soft, nord, onedark, kanagawa, everforest, ayu-dark
+#   Editor Icons:monokai, doom-one, zenburn, base16, poimandres, vesper, night-owl, cobalt2, palenight
+#   Vibrant/Sci-Fi: cyberpunk, synthwave, laserwave, shades-of-purple, aura, moonlight, oxocarbon,
+#                matrix, hacker-amber, sunset, ocean, crimson, lavender, aquarium
 sshs --theme catppuccin
 sshs --theme tokyonight
 sshs --theme dracula
+sshs --theme github-dark
 sshs --theme rose-pine
 sshs --theme cyberpunk
 sshs --theme matrix
@@ -187,6 +198,18 @@ sshs --no-ascii-art
 sshs --no-animate
 ```
 
+### 🚇 Advanced SSH Networking, Tunneling & Security Hub
+
+`sshs` features a built-in interactive **Networking & Tunneling Hub** (<kbd>Ctrl+L</kbd> / <kbd>Ctrl+P</kbd> or <kbd>t</kbd> in Inspector):
+
+- **Local Port Forwarding (`-L`)**: Forward local ports to remote network services (e.g. `8080:localhost:80` or `5432:db.internal:5432`).
+- **Remote Port Forwarding (`-R`)**: Expose local development servers to the remote host (e.g. `9000:localhost:3000`).
+- **Dynamic SOCKS5 Proxy (`-D`)**: Turn any remote SSH server into an encrypted SOCKS5 proxy (e.g. `1080`).
+- **TUN / TAP VPN Tunneling (`-w`)**: Establish Layer 3 TUN or Layer 2 TAP virtual network interfaces (`any:any`) for full IP packet routing.
+- **SSH over TOR (Onion Routing)**: Route SSH traffic directly through the Tor network (`127.0.0.1:9050`) or `.onion` hidden services.
+- **Port Knocking Sequence**: Send native TCP port knocking sequences (e.g. `7000, 8000, 9000`) before connecting to open protected firewalls.
+- **X11 GUI Forwarding (`-X` / `-Y`)**: Run remote graphical X11 Linux applications directly on your local display with compression support (<kbd>Ctrl+X</kbd> or <kbd>x</kbd> in Inspector).
+
 ### ⌨️ Keyboard Shortcuts & Controls
 
 | Key | Action |
@@ -195,6 +218,9 @@ sshs --no-animate
 | <kbd>PageUp</kbd> / <kbd>PageDown</kbd> | Scroll one page up / down |
 | <kbd>Home</kbd> / <kbd>End</kbd> | Jump to top / bottom |
 | <kbd>Enter</kbd> | Connect to selected SSH host |
+| <kbd>Ctrl+F</kbd> | Launch interactive SFTP file transfer session |
+| <kbd>Ctrl+X</kbd> | Launch X11 GUI forwarding session (`ssh -Y -C`) |
+| <kbd>Ctrl+L</kbd> / <kbd>Ctrl+P</kbd> | Open SSH Tunneling, TOR, Port Knocking & X11 Hub |
 | <kbd>Tab</kbd> | Open Host Details Inspector modal |
 | <kbd>Ctrl+N</kbd> | Add new SSH host to `~/.ssh/config` modal |
 | <kbd>Ctrl+D</kbd> / <kbd>Delete</kbd> | Delete selected SSH host profile from `~/.ssh/config` |

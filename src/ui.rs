@@ -57,6 +57,68 @@ pub struct AddHostForm {
     pub active_field: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TunnelMode {
+    Local,     // -L local:remote
+    Remote,    // -R remote:local
+    Dynamic,   // -D local_socks
+    VpnTun,    // -w any:any TUN/TAP VPN
+    Tor,       // Tor SOCKS proxy routing
+    PortKnock, // Port knock sequence before connect
+    X11,       // X11 GUI Forwarding (-X / -Y)
+}
+
+impl TunnelMode {
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Local => Self::Remote,
+            Self::Remote => Self::Dynamic,
+            Self::Dynamic => Self::VpnTun,
+            Self::VpnTun => Self::Tor,
+            Self::Tor => Self::PortKnock,
+            Self::PortKnock => Self::X11,
+            Self::X11 => Self::Local,
+        }
+    }
+
+    #[must_use]
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Local => Self::X11,
+            Self::Remote => Self::Local,
+            Self::Dynamic => Self::Remote,
+            Self::VpnTun => Self::Dynamic,
+            Self::Tor => Self::VpnTun,
+            Self::PortKnock => Self::Tor,
+            Self::X11 => Self::PortKnock,
+        }
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Local => "Local (-L)",
+            Self::Remote => "Remote (-R)",
+            Self::Dynamic => "SOCKS5 (-D)",
+            Self::VpnTun => "TUN/TAP (-w)",
+            Self::Tor => "Tor Onion",
+            Self::PortKnock => "Port Knock",
+            Self::X11 => "X11 GUI (-X/-Y)",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TunnelForm {
+    pub host: ssh::Host,
+    pub mode: TunnelMode,
+    pub local_port: Input,
+    pub remote_target: Input,
+    pub background: bool,
+    pub active_field: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct PostConnectPrompt {
     pub host_name: String,
@@ -80,8 +142,10 @@ pub struct App {
     show_details_modal: bool,
     show_help_modal: bool,
     show_add_host_modal: bool,
+    show_tunnel_modal: bool,
     show_delete_modal: Option<String>,
     add_host_form: AddHostForm,
+    tunnel_form: Option<TunnelForm>,
     post_connect_prompt: Option<PostConnectPrompt>,
     status_message: Option<(String, Instant)>,
     anim_tick: u64,
@@ -123,8 +187,10 @@ impl App {
             show_details_modal: false,
             show_help_modal: false,
             show_add_host_modal: false,
+            show_tunnel_modal: false,
             show_delete_modal: None,
             add_host_form: AddHostForm::default(),
+            tunnel_form: None,
             post_connect_prompt: None,
             status_message: None,
             anim_tick: 0,
@@ -185,6 +251,7 @@ impl App {
                     if !self.show_help_modal
                         && !self.show_details_modal
                         && !self.show_add_host_modal
+                        && !self.show_tunnel_modal
                         && self.show_delete_modal.is_none()
                         && self.post_connect_prompt.is_none()
                     {
@@ -244,7 +311,203 @@ impl App {
             }
         }
 
-        // 2. Post-Connect Passwordless Setup Modal
+        // 2. Advanced SSH Networking / Tunnel / TOR / Port Knocking Modal
+        if self.show_tunnel_modal {
+            if let Some(form) = &mut self.tunnel_form {
+                match key.code {
+                    Esc => {
+                        self.show_tunnel_modal = false;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('1') => {
+                        form.mode = TunnelMode::Local;
+                        form.local_port = "8080".into();
+                        form.remote_target = "localhost:80".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('2') => {
+                        form.mode = TunnelMode::Remote;
+                        form.local_port = "9000".into();
+                        form.remote_target = "localhost:3000".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('3') => {
+                        form.mode = TunnelMode::Dynamic;
+                        form.local_port = "1080".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('4') => {
+                        form.mode = TunnelMode::VpnTun;
+                        form.remote_target = "any:any".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('5') => {
+                        form.mode = TunnelMode::Tor;
+                        form.local_port = "127.0.0.1:9050".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('6') => {
+                        form.mode = TunnelMode::PortKnock;
+                        form.local_port = "7000, 8000, 9000".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char('7') => {
+                        form.mode = TunnelMode::X11;
+                        form.local_port = "trusted".into();
+                        form.remote_target = "compressed".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Tab | Down => {
+                        form.active_field = (form.active_field + 1) % 4;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    BackTab | Up => {
+                        form.active_field = (form.active_field + 3) % 4;
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    Char(' ') | Left | Right => {
+                        if form.active_field == 0 {
+                            if key.code == Left {
+                                form.mode = form.mode.prev();
+                            } else {
+                                form.mode = form.mode.next();
+                            }
+                            return Ok(AppKeyAction::Ok);
+                        } else if form.active_field == 3 {
+                            form.background = !form.background;
+                            return Ok(AppKeyAction::Ok);
+                        }
+                    }
+                    Enter => {
+                        let host = form.host.clone();
+                        let mode = form.mode;
+                        let bg = form.background;
+                        let l_val = form.local_port.value().trim().to_string();
+                        let r_val = form.remote_target.value().trim().to_string();
+                        self.show_tunnel_modal = false;
+
+                        match mode {
+                            TunnelMode::Local => {
+                                if l_val.is_empty() || r_val.is_empty() {
+                                    self.set_status_message("Local port and remote target are required!".to_string());
+                                    return Ok(AppKeyAction::Ok);
+                                }
+                                let spec = format!("{l_val}:{r_val}");
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🚇 Spawning Local Tunnel: ssh -L {spec} {}\n", host.name);
+                                let res = host.spawn_tunnel("-L", &spec, bg);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) if bg => self.set_status_message(format!("Local tunnel active: -L {spec} via '{}' (Background)", host.name)),
+                                    Ok(_) => self.set_status_message(format!("Local tunnel closed: -L {spec}")),
+                                    Err(e) => self.set_status_message(format!("Tunnel error: {e}")),
+                                }
+                            }
+                            TunnelMode::Remote => {
+                                if l_val.is_empty() || r_val.is_empty() {
+                                    self.set_status_message("Remote port and local target are required!".to_string());
+                                    return Ok(AppKeyAction::Ok);
+                                }
+                                let spec = format!("{l_val}:{r_val}");
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🚇 Spawning Remote Tunnel: ssh -R {spec} {}\n", host.name);
+                                let res = host.spawn_tunnel("-R", &spec, bg);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) if bg => self.set_status_message(format!("Remote tunnel active: -R {spec} via '{}' (Background)", host.name)),
+                                    Ok(_) => self.set_status_message(format!("Remote tunnel closed: -R {spec}")),
+                                    Err(e) => self.set_status_message(format!("Tunnel error: {e}")),
+                                }
+                            }
+                            TunnelMode::Dynamic => {
+                                if l_val.is_empty() {
+                                    self.set_status_message("SOCKS proxy port is required!".to_string());
+                                    return Ok(AppKeyAction::Ok);
+                                }
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🛡️ Spawning Dynamic SOCKS5 Proxy: ssh -D {l_val} {}\n", host.name);
+                                let res = host.spawn_tunnel("-D", &l_val, bg);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) if bg => self.set_status_message(format!("SOCKS5 proxy active on port {l_val} via '{}' (Background)", host.name)),
+                                    Ok(_) => self.set_status_message(format!("SOCKS5 proxy on port {l_val} closed")),
+                                    Err(e) => self.set_status_message(format!("SOCKS5 error: {e}")),
+                                }
+                            }
+                            TunnelMode::VpnTun => {
+                                let dev = if r_val.is_empty() { "any:any" } else { &r_val };
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🌐 Spawning VPN TUN/TAP Tunnel: ssh -w {dev} {}\n", host.name);
+                                let res = host.spawn_vpn_tun(dev, bg);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) if bg => self.set_status_message(format!("VPN TUN/TAP tunnel active (-w {dev}) via '{}' (Background)", host.name)),
+                                    Ok(_) => self.set_status_message("VPN tunnel session closed".to_string()),
+                                    Err(e) => self.set_status_message(format!("VPN error: {e}")),
+                                }
+                            }
+                            TunnelMode::Tor => {
+                                let proxy = if l_val.is_empty() { "127.0.0.1:9050" } else { &l_val };
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🧅 Connecting to '{}' over Tor (SOCKS5 {})...\n", host.name, proxy);
+                                let res = host.spawn_over_tor(proxy);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) => self.set_status_message(format!("Tor SSH session with '{}' closed", host.name)),
+                                    Err(e) => self.set_status_message(format!("Tor connection error: {e}")),
+                                }
+                            }
+                            TunnelMode::PortKnock => {
+                                let ports: Vec<u16> = l_val
+                                    .split([',', ' ', ';'])
+                                    .filter_map(|s| s.trim().parse::<u16>().ok())
+                                    .collect();
+                                if ports.is_empty() {
+                                    self.set_status_message("At least one port number is required for knocking!".to_string());
+                                    return Ok(AppKeyAction::Ok);
+                                }
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🚪 Sending port knock sequence {:?} to '{}'...\n", ports, host.name);
+                                let _ = host.perform_port_knock(&ports, 100);
+                                println!("Connecting via SSH...\n");
+                                let res = host.spawn_command_template(&self.config.command_template);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) => self.set_status_message(format!("Port knocked & session with '{}' closed", host.name)),
+                                    Err(e) => self.set_status_message(format!("SSH connection error: {e}")),
+                                }
+                            }
+                            TunnelMode::X11 => {
+                                let is_untrusted = l_val.eq_ignore_ascii_case("untrusted") || l_val.eq_ignore_ascii_case("standard");
+                                let is_trusted = !is_untrusted;
+                                let is_compress = !r_val.eq_ignore_ascii_case("no") && !r_val.eq_ignore_ascii_case("false") && !r_val.eq_ignore_ascii_case("none");
+                                let flag = if is_trusted { "-Y" } else { "-X" };
+                                let c_flag = if is_compress { " -C" } else { "" };
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n🖥️ Launching X11 GUI Forwarding Session: ssh {flag}{c_flag} {}\n", host.name);
+                                let res = host.spawn_x11(is_trusted, is_compress);
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) => self.set_status_message(format!("X11 session ({flag}) with '{}' closed", host.name)),
+                                    Err(e) => self.set_status_message(format!("X11 connection error: {e}")),
+                                }
+                            }
+                        }
+                        return Ok(AppKeyAction::Ok);
+                    }
+                    _ => {
+                        if form.active_field == 1 {
+                            form.local_port.handle_event(ev);
+                        } else if form.active_field == 2 {
+                            form.remote_target.handle_event(ev);
+                        }
+                        return Ok(AppKeyAction::Ok);
+                    }
+                }
+            }
+        }
+
+        // 3. Post-Connect Passwordless Setup Modal
         if let Some(prompt) = self.post_connect_prompt.clone() {
             match key.code {
                 Char('y' | 'Y') => {
@@ -260,7 +523,7 @@ impl App {
             }
         }
 
-        // 3. Add New Host Modal
+        // 4. Add New Host Modal
         if self.show_add_host_modal {
             match key.code {
                 Esc => {
@@ -322,15 +585,15 @@ impl App {
             }
         }
 
-        // 4. Ctrl Key Shortcuts
+        // 5. Ctrl Key Shortcuts
         if is_ctrl_pressed {
-            let action = self.on_key_press_ctrl(key);
+            let action = self.on_key_press_ctrl(terminal, key);
             if action != AppKeyAction::Continue {
                 return Ok(action);
             }
         }
 
-        // 5. Help Modal
+        // 6. Help Modal
         if self.show_help_modal {
             match key.code {
                 Esc | Char('q') | Enter => {
@@ -341,11 +604,24 @@ impl App {
             }
         }
 
-        // 6. Details Inspector Modal
+        // 7. Details Inspector Modal
         if self.show_details_modal {
             match key.code {
                 Esc | Tab | Char('q') => {
                     self.show_details_modal = false;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Char('s' | 'f') => {
+                    self.show_details_modal = false;
+                    return self.launch_sftp_for_selected_host(terminal);
+                }
+                Char('x') => {
+                    self.show_details_modal = false;
+                    return self.launch_x11_for_selected_host(terminal);
+                }
+                Char('t' | 'p') => {
+                    self.show_details_modal = false;
+                    self.open_tunnel_modal_for_selected_host();
                     return Ok(AppKeyAction::Ok);
                 }
                 Char('d') | Delete => {
@@ -386,7 +662,7 @@ impl App {
             }
         }
 
-        // 7. Normal Table View Controls
+        // 8. Normal Table View Controls
         match key.code {
             Esc => {
                 if !self.search.value().is_empty() {
@@ -494,6 +770,92 @@ impl App {
         Ok(AppKeyAction::Ok)
     }
 
+    fn launch_sftp_for_selected_host<B>(
+        &mut self,
+        terminal: &Rc<RefCell<Terminal<B>>>,
+    ) -> Result<AppKeyAction>
+    where
+        B: Backend + std::io::Write,
+        <B as Backend>::Error: Send + Sync + 'static,
+    {
+        let selected = self.table_state.selected().unwrap_or(0);
+        if selected >= self.hosts.len() {
+            return Ok(AppKeyAction::Ok);
+        }
+
+        let host: ssh::Host = self.hosts[selected].clone();
+
+        restore_terminal(terminal).expect("Failed to restore terminal");
+        println!("\n📂 Starting interactive SFTP session to '{}'...\n", host.name);
+
+        let res = host.spawn_sftp();
+
+        setup_terminal(terminal).expect("Failed to setup terminal");
+
+        match res {
+            Ok(_) => {
+                self.set_status_message(format!("SFTP session with '{}' closed", host.name));
+            }
+            Err(e) => {
+                self.set_status_message(format!("SFTP error: {e}"));
+            }
+        }
+
+        Ok(AppKeyAction::Ok)
+    }
+
+    fn launch_x11_for_selected_host<B>(
+        &mut self,
+        terminal: &Rc<RefCell<Terminal<B>>>,
+    ) -> Result<AppKeyAction>
+    where
+        B: Backend + std::io::Write,
+        <B as Backend>::Error: Send + Sync + 'static,
+    {
+        let selected = self.table_state.selected().unwrap_or(0);
+        if selected >= self.hosts.len() {
+            return Ok(AppKeyAction::Ok);
+        }
+
+        let host: ssh::Host = self.hosts[selected].clone();
+
+        restore_terminal(terminal).expect("Failed to restore terminal");
+        println!("\n🖥️ Starting X11 GUI Forwarding Session to '{}' (ssh -Y -C)...\n", host.name);
+
+        let res = host.spawn_x11(true, true);
+
+        setup_terminal(terminal).expect("Failed to setup terminal");
+
+        match res {
+            Ok(_) => {
+                self.set_status_message(format!("X11 session with '{}' closed", host.name));
+            }
+            Err(e) => {
+                self.set_status_message(format!("X11 error: {e}"));
+            }
+        }
+
+        Ok(AppKeyAction::Ok)
+    }
+
+    fn open_tunnel_modal_for_selected_host(&mut self) {
+        let selected = self.table_state.selected().unwrap_or(0);
+        if selected >= self.hosts.len() {
+            return;
+        }
+
+        let host = self.hosts[selected].clone();
+        self.tunnel_form = Some(TunnelForm {
+            host,
+            mode: TunnelMode::Local,
+            local_port: "8080".into(),
+            remote_target: "localhost:80".into(),
+            background: true,
+            active_field: 0,
+        });
+        self.show_tunnel_modal = true;
+    }
+
     fn run_ssh_copy_id<B>(
         &mut self,
         terminal: &Rc<RefCell<Terminal<B>>>,
@@ -544,7 +906,15 @@ impl App {
         Ok(())
     }
 
-    fn on_key_press_ctrl(&mut self, key: KeyEvent) -> AppKeyAction {
+    fn on_key_press_ctrl<B>(
+        &mut self,
+        terminal: &Rc<RefCell<Terminal<B>>>,
+        key: KeyEvent,
+    ) -> AppKeyAction
+    where
+        B: Backend + std::io::Write,
+        <B as Backend>::Error: Send + Sync + 'static,
+    {
         #[allow(clippy::enum_glob_use)]
         use KeyCode::*;
 
@@ -556,6 +926,18 @@ impl App {
                     port: "22".into(),
                     ..Default::default()
                 };
+                AppKeyAction::Ok
+            }
+            Char('f') => {
+                let _ = self.launch_sftp_for_selected_host(terminal);
+                AppKeyAction::Ok
+            }
+            Char('x') => {
+                let _ = self.launch_x11_for_selected_host(terminal);
+                AppKeyAction::Ok
+            }
+            Char('l' | 'p') => {
+                self.open_tunnel_modal_for_selected_host();
                 AppKeyAction::Ok
             }
             Char('d') => {
@@ -591,7 +973,7 @@ impl App {
                 self.next();
                 AppKeyAction::Ok
             }
-            Char('k' | 'p') => {
+            Char('k') => {
                 self.previous();
                 AppKeyAction::Ok
             }
@@ -855,6 +1237,10 @@ fn ui(f: &mut Frame, app: &mut App) {
     // Render modals if active
     if let Some(del_name) = &app.show_delete_modal.clone() {
         render_delete_modal(f, app, del_name);
+    } else if app.show_tunnel_modal {
+        if let Some(form) = &app.tunnel_form {
+            render_tunnel_modal(f, app, form);
+        }
     } else if app.show_add_host_modal {
         render_add_host_modal(f, app);
     } else if let Some(prompt) = &app.post_connect_prompt {
@@ -1089,10 +1475,16 @@ fn render_footer(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(" Connect  ", app.theme.key_desc_style()),
             Span::styled(" Tab ", app.theme.key_badge_style()),
             Span::styled(" Details  ", app.theme.key_desc_style()),
+            Span::styled(" ^F ", app.theme.key_badge_style()),
+            Span::styled(" SFTP  ", app.theme.key_desc_style()),
+            Span::styled(" ^X ", app.theme.key_badge_style()),
+            Span::styled(" X11  ", app.theme.key_desc_style()),
+            Span::styled(" ^L ", app.theme.key_badge_style()),
+            Span::styled(" Tunnel/TOR  ", app.theme.key_desc_style()),
             Span::styled(" ^N ", app.theme.key_badge_style()),
             Span::styled(" Add  ", app.theme.key_desc_style()),
             Span::styled(" ^D ", app.theme.key_badge_style()),
-            Span::styled(" Delete  ", app.theme.key_desc_style()),
+            Span::styled(" Del  ", app.theme.key_desc_style()),
             Span::styled(" ^T ", app.theme.key_badge_style()),
             Span::styled(" Theme  ", app.theme.key_desc_style()),
             Span::styled(" ^? ", app.theme.key_badge_style()),
@@ -1157,6 +1549,257 @@ fn render_delete_modal(f: &mut Frame, app: &App, host_name: &str) {
         .border_style(app.theme.active_border_style())
         .title(Line::from(Span::styled(
             " 🗑 Delete SSH Host Profile ",
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
+        )));
+
+    let widget = Paragraph::new(lines).block(modal_block);
+    f.render_widget(widget, area);
+}
+
+fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
+    let area = centered_rect(72, 70, f.area());
+    f.render_widget(Clear, area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::raw(""));
+
+    // Target Info
+    lines.push(Line::from(vec![
+        Span::styled("  Target Host: ", Style::default().fg(app.theme.muted)),
+        Span::styled(&form.host.name, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" ({})", form.host.destination), Style::default().fg(app.theme.destination)),
+    ]));
+    lines.push(Line::raw(""));
+
+    // Field 0: Tunnel Mode
+    let mode_active = form.active_field == 0;
+    let mode_prefix = if mode_active { " ❯ " } else { "   " };
+    let mode_style = if mode_active {
+        Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(app.theme.muted)
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled(mode_prefix, mode_style),
+        Span::styled("Networking Mode (Keys 1-6 or Space / ← / → to change):", mode_style),
+    ]));
+
+    let modes = [
+        (TunnelMode::Local, "1. Local (-L)"),
+        (TunnelMode::Remote, "2. Remote (-R)"),
+        (TunnelMode::Dynamic, "3. SOCKS5 (-D)"),
+        (TunnelMode::VpnTun, "4. TUN/TAP (-w)"),
+        (TunnelMode::Tor, "5. Tor Onion"),
+        (TunnelMode::PortKnock, "6. Port Knock"),
+        (TunnelMode::X11, "7. X11 GUI (-X/-Y)"),
+    ];
+
+    let row1 = modes[0..3].iter().map(|&(m, label)| {
+        if form.mode == m {
+            Span::styled(format!(" [◉ {label}] "), Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled(format!(" [○ {label}] "), Style::default().fg(app.theme.muted))
+        }
+    }).collect::<Vec<_>>();
+
+    let row2 = modes[3..6].iter().map(|&(m, label)| {
+        if form.mode == m {
+            Span::styled(format!(" [◉ {label}] "), Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled(format!(" [○ {label}] "), Style::default().fg(app.theme.muted))
+        }
+    }).collect::<Vec<_>>();
+
+    let row3 = modes[6..7].iter().map(|&(m, label)| {
+        if form.mode == m {
+            Span::styled(format!(" [◉ {label}] "), Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled(format!(" [○ {label}] "), Style::default().fg(app.theme.muted))
+        }
+    }).collect::<Vec<_>>();
+
+    lines.push(Line::from(row1));
+    lines.push(Line::from(row2));
+    lines.push(Line::from(row3));
+    lines.push(Line::raw(""));
+
+    // Field 1: Dynamic Parameter 1
+    let lp_active = form.active_field == 1;
+    let lp_prefix = if lp_active { " ❯ " } else { "   " };
+    let lp_label = match form.mode {
+        TunnelMode::Local => "Local Listening Port (e.g. 8080):",
+        TunnelMode::Remote => "Remote Listening Port (e.g. 9000):",
+        TunnelMode::Dynamic => "Local SOCKS5 Proxy Port (e.g. 1080):",
+        TunnelMode::VpnTun => "VPN Gateway Parameter (Optional):",
+        TunnelMode::Tor => "Tor SOCKS5 Proxy Address (e.g. 127.0.0.1:9050):",
+        TunnelMode::PortKnock => "Port Knocking Sequence (e.g. 7000, 8000, 9000):",
+        TunnelMode::X11 => "X11 Security Mode ('trusted' [-Y] or 'standard' [-X]):",
+    };
+    let lp_style = if lp_active {
+        Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(app.theme.muted)
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled(lp_prefix, lp_style),
+        Span::styled(lp_label, lp_style),
+    ]));
+
+    let lp_val = form.local_port.value();
+    let lp_placeholder = match form.mode {
+        TunnelMode::Local => "8080",
+        TunnelMode::Remote => "9000",
+        TunnelMode::Dynamic => "1080",
+        TunnelMode::VpnTun => "(default)",
+        TunnelMode::Tor => "127.0.0.1:9050",
+        TunnelMode::PortKnock => "7000, 8000, 9000",
+        TunnelMode::X11 => "trusted",
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled("     [ ", if lp_active { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.border) }),
+        Span::styled(if lp_val.is_empty() { lp_placeholder } else { lp_val }, if lp_val.is_empty() { Style::default().fg(app.theme.muted) } else { Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD) }),
+        Span::styled(" ]", if lp_active { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.border) }),
+    ]));
+    lines.push(Line::raw(""));
+
+    // Field 2: Target / Interface parameter
+    if form.mode == TunnelMode::Local || form.mode == TunnelMode::Remote || form.mode == TunnelMode::VpnTun || form.mode == TunnelMode::X11 {
+        let rt_active = form.active_field == 2;
+        let rt_prefix = if rt_active { " ❯ " } else { "   " };
+        let rt_label = match form.mode {
+            TunnelMode::Local => "Remote Destination Endpoint (host:port):",
+            TunnelMode::Remote => "Local Target to Expose (host:port):",
+            TunnelMode::VpnTun => "Virtual TUN Network Device (local:remote):",
+            TunnelMode::X11 => "Compression Mode ('compressed' [-C] or 'none'):",
+            _ => "",
+        };
+        let rt_placeholder = match form.mode {
+            TunnelMode::Local => "localhost:80",
+            TunnelMode::Remote => "localhost:3000",
+            TunnelMode::VpnTun => "any:any",
+            TunnelMode::X11 => "compressed",
+            _ => "",
+        };
+        let rt_style = if rt_active {
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.muted)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(rt_prefix, rt_style),
+            Span::styled(rt_label, rt_style),
+        ]));
+
+        let rt_val = form.remote_target.value();
+        lines.push(Line::from(vec![
+            Span::styled("     [ ", if rt_active { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.border) }),
+            Span::styled(if rt_val.is_empty() { rt_placeholder } else { rt_val }, if rt_val.is_empty() { Style::default().fg(app.theme.muted) } else { Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD) }),
+            Span::styled(" ]", if rt_active { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.border) }),
+        ]));
+        lines.push(Line::raw(""));
+    }
+
+    // Field 3: Background execution
+    if form.mode != TunnelMode::Tor && form.mode != TunnelMode::PortKnock && form.mode != TunnelMode::X11 {
+        let bg_active = form.active_field == 3;
+        let bg_prefix = if bg_active { " ❯ " } else { "   " };
+        let bg_style = if bg_active {
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.muted)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(bg_prefix, bg_style),
+            Span::styled("Execution Mode (Space to toggle):", bg_style),
+        ]));
+
+        let (bg_btn, fg_btn) = if form.background {
+            (
+                Span::styled(" [◉ Run in background daemon (-f -N)] ", Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD)),
+                Span::styled(" [○ Attach interactive shell] ", Style::default().fg(app.theme.muted)),
+            )
+        } else {
+            (
+                Span::styled(" [○ Run in background daemon (-f -N)] ", Style::default().fg(app.theme.muted)),
+                Span::styled(" [◉ Attach interactive shell] ", Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            )
+        };
+
+        lines.push(Line::from(vec![
+            Span::raw("     "),
+            bg_btn,
+            fg_btn,
+        ]));
+        lines.push(Line::raw(""));
+    }
+
+    // Command Preview
+    let lp = if form.local_port.value().is_empty() { "8080" } else { form.local_port.value() };
+    let bg_flag = if form.background && form.mode != TunnelMode::Tor && form.mode != TunnelMode::PortKnock && form.mode != TunnelMode::X11 { "-f -N " } else { "" };
+    let cmd_preview = match form.mode {
+        TunnelMode::Local => {
+            let rt = if form.remote_target.value().is_empty() { "localhost:80" } else { form.remote_target.value() };
+            format!("ssh {bg_flag}-L {lp}:{rt} {}", form.host.name)
+        }
+        TunnelMode::Remote => {
+            let rt = if form.remote_target.value().is_empty() { "localhost:3000" } else { form.remote_target.value() };
+            format!("ssh {bg_flag}-R {lp}:{rt} {}", form.host.name)
+        }
+        TunnelMode::Dynamic => {
+            format!("ssh {bg_flag}-D {lp} {}", form.host.name)
+        }
+        TunnelMode::VpnTun => {
+            let dev = if form.remote_target.value().is_empty() { "any:any" } else { form.remote_target.value() };
+            format!("ssh {bg_flag}-w {dev} -o Tunnel=point-to-point {}", form.host.name)
+        }
+        TunnelMode::Tor => {
+            let prx = if form.local_port.value().is_empty() { "127.0.0.1:9050" } else { form.local_port.value() };
+            format!("ssh -o \"ProxyCommand=nc -X 5 -x {prx} %h %p\" {}", form.host.name)
+        }
+        TunnelMode::PortKnock => {
+            let seq = if form.local_port.value().is_empty() { "7000, 8000, 9000" } else { form.local_port.value() };
+            format!("knock {} {seq} && ssh {}", form.host.name, form.host.name)
+        }
+        TunnelMode::X11 => {
+            let is_untrusted = form.local_port.value().eq_ignore_ascii_case("untrusted") || form.local_port.value().eq_ignore_ascii_case("standard");
+            let flag = if is_untrusted { "-X" } else { "-Y" };
+            let is_compress = !form.remote_target.value().eq_ignore_ascii_case("none") && !form.remote_target.value().eq_ignore_ascii_case("no");
+            let c_flag = if is_compress { " -C" } else { "" };
+            format!("ssh {flag}{c_flag} {}", form.host.name)
+        }
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled("  Command Preview: ", Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+        Span::styled(cmd_preview, Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::raw(""));
+
+    lines.push(
+        Line::from(vec![
+            Span::styled(" [ Tab/↓ ] ", app.theme.key_badge_style()),
+            Span::styled(" Next   ", app.theme.key_desc_style()),
+            Span::styled(" [ 1-7 ] ", app.theme.key_badge_style()),
+            Span::styled(" Mode   ", app.theme.key_desc_style()),
+            Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
+            Span::styled(" Launch / Connect   ", app.theme.key_desc_style()),
+            Span::styled(" [ Esc ] ", app.theme.key_badge_style()),
+            Span::styled(" Cancel", app.theme.key_desc_style()),
+        ])
+        .centered(),
+    );
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.active_border_style())
+        .title(Line::from(Span::styled(
+            " 🚇 SSH Tunneling, TOR, Port Knocking & X11 Hub ",
             Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
         )));
 
@@ -1315,7 +1958,7 @@ fn render_post_connect_modal(f: &mut Frame, app: &App, prompt: &PostConnectPromp
 }
 
 fn render_details_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(70, 75, f.area());
+    let area = centered_rect(72, 80, f.area());
     f.render_widget(Clear, area);
 
     let selected = app.table_state.selected().unwrap_or(0);
@@ -1375,7 +2018,7 @@ fn render_details_modal(f: &mut Frame, app: &App) {
 
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
-        Span::styled("  Command To Execute:", Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+        Span::styled("  SSH Command:", Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(vec![
         Span::styled(format!("    ❯ {rendered_cmd}"), Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD)),
@@ -1384,13 +2027,17 @@ fn render_details_modal(f: &mut Frame, app: &App) {
     lines.push(
         Line::from(vec![
             Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
-            Span::styled(" Connect   ", app.theme.key_desc_style()),
-            Span::styled(" [ Ctrl+D / d ] ", app.theme.key_badge_style()),
-            Span::styled(" Delete Host   ", app.theme.key_desc_style()),
-            Span::styled(" [ ↑/↓ ] ", app.theme.key_badge_style()),
-            Span::styled(" Navigate   ", app.theme.key_desc_style()),
-            Span::styled(" [ Esc / Tab ] ", app.theme.key_badge_style()),
-            Span::styled(" Close Inspector", app.theme.key_desc_style()),
+            Span::styled(" SSH   ", app.theme.key_desc_style()),
+            Span::styled(" [ s / ^F ] ", app.theme.key_badge_style()),
+            Span::styled(" SFTP   ", app.theme.key_desc_style()),
+            Span::styled(" [ x / ^X ] ", app.theme.key_badge_style()),
+            Span::styled(" X11   ", app.theme.key_desc_style()),
+            Span::styled(" [ t / ^L ] ", app.theme.key_badge_style()),
+            Span::styled(" Tunnel/TOR/Knock   ", app.theme.key_desc_style()),
+            Span::styled(" [ d / ^D ] ", app.theme.key_badge_style()),
+            Span::styled(" Delete   ", app.theme.key_desc_style()),
+            Span::styled(" [ Esc ] ", app.theme.key_badge_style()),
+            Span::styled(" Close", app.theme.key_desc_style()),
         ])
         .centered(),
     );
@@ -1409,7 +2056,7 @@ fn render_details_modal(f: &mut Frame, app: &App) {
 }
 
 fn render_help_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(72, 85, f.area());
+    let area = centered_rect(72, 88, f.area());
     f.render_widget(Clear, area);
 
     let mut lines = ascii_art::render_help_header(&app.theme);
@@ -1421,15 +2068,18 @@ fn render_help_modal(f: &mut Frame, app: &App) {
             ("PageUp / PageDn", "Scroll one page up / down"),
             ("Home / End", "Jump to top / bottom of list"),
         ]),
-        ("Actions", &[
+        ("Connections & Networking", &[
             ("Enter", "Connect to selected SSH host"),
+            ("Ctrl+F", "Launch interactive SFTP file transfer"),
+            ("Ctrl+X", "Launch X11 GUI forwarding session (-Y -C)"),
+            ("Ctrl+L / Ctrl+P", "Tunneling, TOR SOCKS, Port Knocking & X11 Hub"),
             ("Tab", "Open Host Inspector & Details modal"),
             ("Ctrl+N", "Add a new SSH host to ~/.ssh/config"),
             ("Ctrl+D / Delete", "Delete selected host from ~/.ssh/config"),
             ("Type text", "Fuzzy search and filter hosts"),
             ("Esc", "Clear search query or quit"),
         ]),
-        ("Customization & Tools", &[
+        ("Customization & Help", &[
             ("Ctrl+T / F2", "Cycle visual theme dynamically"),
             ("Ctrl+S", "Save active theme to ~/.config/sshs/config.toml"),
             ("Ctrl+A", "Toggle visual animations on / off"),
@@ -1593,8 +2243,12 @@ mod tests {
         let mut app = App::new(&config).unwrap();
         assert!(!app.show_add_host_modal);
 
+        let stdout = io::stdout().lock();
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Rc::new(RefCell::new(Terminal::new(backend).unwrap()));
+
         let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
-        let action = app.on_key_press_ctrl(key);
+        let action = app.on_key_press_ctrl(&terminal, key);
         assert_eq!(action, AppKeyAction::Ok);
         assert!(app.show_add_host_modal);
     }
@@ -1605,9 +2259,30 @@ mod tests {
         let mut app = App::new(&config).unwrap();
         assert!(app.show_delete_modal.is_none());
 
+        let stdout = io::stdout().lock();
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Rc::new(RefCell::new(Terminal::new(backend).unwrap()));
+
         let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
-        let action = app.on_key_press_ctrl(key);
+        let action = app.on_key_press_ctrl(&terminal, key);
         assert_eq!(action, AppKeyAction::Ok);
         assert_eq!(app.show_delete_modal.as_deref(), Some("match1"));
+    }
+
+    #[test]
+    fn test_tunnel_modal_toggle() {
+        let config = test_config();
+        let mut app = App::new(&config).unwrap();
+        assert!(!app.show_tunnel_modal);
+
+        let stdout = io::stdout().lock();
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Rc::new(RefCell::new(Terminal::new(backend).unwrap()));
+
+        let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let action = app.on_key_press_ctrl(&terminal, key);
+        assert_eq!(action, AppKeyAction::Ok);
+        assert!(app.show_tunnel_modal);
+        assert_eq!(app.tunnel_form.as_ref().unwrap().host.name, "match1");
     }
 }

@@ -58,6 +58,149 @@ impl Host {
 
         Ok(Command::new(command).args(args).spawn()?.wait()?)
     }
+
+    /// Launches an interactive SFTP file transfer session to this host.
+    ///
+    /// # Errors
+    /// Returns an error if the process fails to spawn or execute.
+    pub fn spawn_sftp(&self) -> anyhow::Result<std::process::ExitStatus> {
+        let mut cmd = Command::new("sftp");
+        if let Some(port) = &self.port {
+            if !port.is_empty() && port != "22" {
+                cmd.arg("-P").arg(port);
+            }
+        }
+        cmd.arg(&self.name);
+        Ok(cmd.spawn()?.wait()?)
+    }
+
+    /// Spawns an SSH tunnel / port forwarding command.
+    ///
+    /// # Errors
+    /// Returns an error if the process fails to spawn.
+    pub fn spawn_tunnel(
+        &self,
+        tunnel_flag: &str,
+        spec: &str,
+        background: bool,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        let mut cmd = Command::new("ssh");
+        if background {
+            cmd.arg("-f").arg("-N");
+        }
+        cmd.arg(tunnel_flag).arg(spec);
+        if let Some(port) = &self.port {
+            if !port.is_empty() && port != "22" {
+                cmd.arg("-p").arg(port);
+            }
+        }
+        cmd.arg(&self.name);
+
+        if background {
+            Ok(cmd.status()?)
+        } else {
+            Ok(cmd.spawn()?.wait()?)
+        }
+    }
+
+    /// Spawns an SSH Layer 3 TUN or Layer 2 TAP virtual network tunnel.
+    ///
+    /// # Errors
+    /// Returns an error if the process fails to spawn.
+    pub fn spawn_vpn_tun(
+        &self,
+        tun_device: &str,
+        background: bool,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        let mut cmd = Command::new("ssh");
+        if background {
+            cmd.arg("-f").arg("-N");
+        }
+        cmd.arg("-w").arg(tun_device);
+        cmd.arg("-o").arg("Tunnel=point-to-point");
+        if let Some(port) = &self.port {
+            if !port.is_empty() && port != "22" {
+                cmd.arg("-p").arg(port);
+            }
+        }
+        cmd.arg(&self.name);
+
+        if background {
+            Ok(cmd.status()?)
+        } else {
+            Ok(cmd.spawn()?.wait()?)
+        }
+    }
+
+    /// Spawns an SSH connection routed through the Tor network (via SOCKS5 proxy).
+    ///
+    /// # Errors
+    /// Returns an error if the process fails to spawn.
+    pub fn spawn_over_tor(
+        &self,
+        tor_proxy: &str,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        let proxy_cmd = format!("nc -X 5 -x {tor_proxy} %h %p");
+        let mut cmd = Command::new("ssh");
+        cmd.arg("-o").arg(format!("ProxyCommand={proxy_cmd}"));
+        if let Some(port) = &self.port {
+            if !port.is_empty() && port != "22" {
+                cmd.arg("-p").arg(port);
+            }
+        }
+        cmd.arg(&self.name);
+        Ok(cmd.spawn()?.wait()?)
+    }
+
+    /// Spawns an SSH session with X11 GUI forwarding enabled (-X or -Y).
+    ///
+    /// # Errors
+    /// Returns an error if the process fails to spawn.
+    pub fn spawn_x11(&self, trusted: bool, compress: bool) -> anyhow::Result<std::process::ExitStatus> {
+        let mut cmd = Command::new("ssh");
+        if trusted {
+            cmd.arg("-Y");
+        } else {
+            cmd.arg("-X");
+        }
+        if compress {
+            cmd.arg("-C");
+        }
+        if let Some(port) = &self.port {
+            if !port.is_empty() && port != "22" {
+                cmd.arg("-p").arg(port);
+            }
+        }
+        cmd.arg(&self.name);
+        Ok(cmd.spawn()?.wait()?)
+    }
+
+    /// Performs a port knocking sequence to the destination host before connecting.
+    ///
+    /// # Errors
+    /// Returns an error if knocking fails.
+    pub fn perform_port_knock(&self, ports: &[u16], delay_ms: u64) -> anyhow::Result<()> {
+        use std::net::{TcpStream, ToSocketAddrs};
+        use std::time::Duration;
+
+        let host = if self.destination.is_empty() {
+            &self.name
+        } else {
+            &self.destination
+        };
+
+        for &port in ports {
+            let addr_str = format!("{host}:{port}");
+            if let Ok(mut addrs) = addr_str.to_socket_addrs() {
+                if let Some(addr) = addrs.next() {
+                    let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(150));
+                }
+            }
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
+
+        Ok(())
+    }
 }
 
 /// Expands the `%h` and `%n` tokens that `ssh_config` allows in `HostName`,
