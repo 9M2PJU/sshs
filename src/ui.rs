@@ -69,6 +69,7 @@ pub enum TunnelMode {
     Tor,       // Tor SOCKS proxy routing
     PortKnock, // Port knock sequence before connect
     X11,       // X11 GUI Forwarding (-X / -Y)
+    Pqc,       // Post-Quantum Cryptography (ML-KEM / sntrup761)
 }
 
 impl TunnelMode {
@@ -81,20 +82,22 @@ impl TunnelMode {
             Self::VpnTun => Self::Tor,
             Self::Tor => Self::PortKnock,
             Self::PortKnock => Self::X11,
-            Self::X11 => Self::Local,
+            Self::X11 => Self::Pqc,
+            Self::Pqc => Self::Local,
         }
     }
 
     #[must_use]
     pub fn prev(self) -> Self {
         match self {
-            Self::Local => Self::X11,
+            Self::Local => Self::Pqc,
             Self::Remote => Self::Local,
             Self::Dynamic => Self::Remote,
             Self::VpnTun => Self::Dynamic,
             Self::Tor => Self::VpnTun,
             Self::PortKnock => Self::Tor,
             Self::X11 => Self::PortKnock,
+            Self::Pqc => Self::X11,
         }
     }
 
@@ -108,6 +111,7 @@ impl TunnelMode {
             Self::Tor => "Tor Onion",
             Self::PortKnock => "Port Knock",
             Self::X11 => "X11 GUI (-X/-Y)",
+            Self::Pqc => "Post-Quantum (PQC)",
         }
     }
 }
@@ -518,6 +522,11 @@ impl App {
                         form.remote_target = "compressed".into();
                         return Ok(AppKeyAction::Ok);
                     }
+                    Char('8') => {
+                        form.mode = TunnelMode::Pqc;
+                        form.local_port = "mlkem768x25519-sha512@openssh.com,sntrup761x25519-sha512@openssh.com".into();
+                        return Ok(AppKeyAction::Ok);
+                    }
                     Tab | Down => {
                         form.active_field = (form.active_field + 1) % 4;
                         return Ok(AppKeyAction::Ok);
@@ -651,6 +660,30 @@ impl App {
                                 match res {
                                     Ok(_) => self.set_status_message(format!("X11 session ({flag}) with '{}' closed", host.name)),
                                     Err(e) => self.set_status_message(format!("X11 connection error: {e}")),
+                                }
+                            }
+                            TunnelMode::Pqc => {
+                                let kex = if l_val.is_empty() {
+                                    "mlkem768x25519-sha512@openssh.com,sntrup761x25519-sha512@openssh.com".to_string()
+                                } else {
+                                    l_val.clone()
+                                };
+                                restore_terminal(terminal).expect("Failed to restore terminal");
+                                println!("\n⚛️ Launching Post-Quantum (PQC) Session to '{}'...\n", host.name);
+                                println!("KEX: {kex}\n");
+                                let mut cmd = Command::new("ssh");
+                                cmd.arg("-o").arg(format!("KexAlgorithms={kex}"));
+                                if let Some(p) = &host.port {
+                                    if !p.is_empty() && p != "22" {
+                                        cmd.arg("-p").arg(p);
+                                    }
+                                }
+                                cmd.arg(&host.name);
+                                let res = cmd.status();
+                                setup_terminal(terminal).expect("Failed to setup terminal");
+                                match res {
+                                    Ok(_) => self.set_status_message(format!("Post-Quantum session with '{}' closed", host.name)),
+                                    Err(e) => self.set_status_message(format!("PQC connection error: {e}")),
                                 }
                             }
                         }
@@ -2070,7 +2103,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
 
     lines.push(Line::from(vec![
         Span::styled(mode_prefix, mode_style),
-        Span::styled("Networking Mode (Keys 1-7 or Space / ← / → to change):", mode_style),
+        Span::styled("Networking Mode (Keys 1-8 or Space / ← / → to change):", mode_style),
     ]));
 
     let modes = [
@@ -2081,9 +2114,10 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
         (TunnelMode::Tor, "5. Tor Onion"),
         (TunnelMode::PortKnock, "6. Port Knock"),
         (TunnelMode::X11, "7. X11 GUI (-X/-Y)"),
+        (TunnelMode::Pqc, "8. Post-Quantum (PQC)"),
     ];
 
-    let row1 = modes[0..3].iter().map(|&(m, label)| {
+    let row1 = modes[0..4].iter().map(|&(m, label)| {
         if form.mode == m {
             Span::styled(format!(" [◉ {label}] "), Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD))
         } else {
@@ -2091,15 +2125,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
         }
     }).collect::<Vec<_>>();
 
-    let row2 = modes[3..6].iter().map(|&(m, label)| {
-        if form.mode == m {
-            Span::styled(format!(" [◉ {label}] "), Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD))
-        } else {
-            Span::styled(format!(" [○ {label}] "), Style::default().fg(app.theme.muted))
-        }
-    }).collect::<Vec<_>>();
-
-    let row3 = modes[6..7].iter().map(|&(m, label)| {
+    let row2 = modes[4..8].iter().map(|&(m, label)| {
         if form.mode == m {
             Span::styled(format!(" [◉ {label}] "), Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD))
         } else {
@@ -2109,7 +2135,6 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
 
     lines.push(Line::from(row1));
     lines.push(Line::from(row2));
-    lines.push(Line::from(row3));
     lines.push(Line::raw(""));
 
     // Field 1: Dynamic Parameter 1
@@ -2123,6 +2148,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
         TunnelMode::Tor => "Tor SOCKS5 Proxy Address (e.g. 127.0.0.1:9050):",
         TunnelMode::PortKnock => "Port Knocking Sequence (e.g. 7000, 8000, 9000):",
         TunnelMode::X11 => "X11 Security Mode ('trusted' [-Y] or 'standard' [-X]):",
+        TunnelMode::Pqc => "Enforced Post-Quantum Algorithms (ML-KEM / sntrup761):",
     };
     let lp_style = if lp_active {
         Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
@@ -2144,6 +2170,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
         TunnelMode::Tor => "127.0.0.1:9050",
         TunnelMode::PortKnock => "7000, 8000, 9000",
         TunnelMode::X11 => "trusted",
+        TunnelMode::Pqc => "mlkem768x25519-sha512@openssh.com,sntrup761x25519-sha512@openssh.com",
     };
 
     lines.push(Line::from(vec![
@@ -2192,7 +2219,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
     }
 
     // Field 3: Background execution
-    if form.mode != TunnelMode::Tor && form.mode != TunnelMode::PortKnock && form.mode != TunnelMode::X11 {
+    if form.mode != TunnelMode::Tor && form.mode != TunnelMode::PortKnock && form.mode != TunnelMode::X11 && form.mode != TunnelMode::Pqc {
         let bg_active = form.active_field == 3;
         let bg_prefix = if bg_active { " ❯ " } else { "   " };
         let bg_style = if bg_active {
@@ -2228,7 +2255,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
 
     // Command Preview
     let lp = if form.local_port.value().is_empty() { "8080" } else { form.local_port.value() };
-    let bg_flag = if form.background && form.mode != TunnelMode::Tor && form.mode != TunnelMode::PortKnock && form.mode != TunnelMode::X11 { "-f -N " } else { "" };
+    let bg_flag = if form.background && form.mode != TunnelMode::Tor && form.mode != TunnelMode::PortKnock && form.mode != TunnelMode::X11 && form.mode != TunnelMode::Pqc { "-f -N " } else { "" };
     let cmd_preview = match form.mode {
         TunnelMode::Local => {
             let rt = if form.remote_target.value().is_empty() { "localhost:80" } else { form.remote_target.value() };
@@ -2260,6 +2287,10 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
             let c_flag = if is_compress { " -C" } else { "" };
             format!("ssh {flag}{c_flag} {}", form.host.name)
         }
+        TunnelMode::Pqc => {
+            let kex = if form.local_port.value().is_empty() { "mlkem768x25519-sha512@openssh.com,sntrup761x25519-sha512@openssh.com" } else { form.local_port.value() };
+            format!("ssh -o \"KexAlgorithms={kex}\" {}", form.host.name)
+        }
     };
 
     lines.push(Line::from(vec![
@@ -2272,7 +2303,7 @@ fn render_tunnel_modal(f: &mut Frame, app: &App, form: &TunnelForm) {
         Line::from(vec![
             Span::styled(" [ Tab/↓ ] ", app.theme.key_badge_style()),
             Span::styled(" Next   ", app.theme.key_desc_style()),
-            Span::styled(" [ 1-7 ] ", app.theme.key_badge_style()),
+            Span::styled(" [ 1-8 ] ", app.theme.key_badge_style()),
             Span::styled(" Mode   ", app.theme.key_desc_style()),
             Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
             Span::styled(" Launch / Connect   ", app.theme.key_desc_style()),
