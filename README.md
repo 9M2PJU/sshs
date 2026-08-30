@@ -17,6 +17,7 @@ It uses `~/.ssh/config` to list, search, inspect, and connect to hosts.
 - 🖥 **Host Details Inspector**: Press <kbd>Tab</kbd> to inspect complete host details, identity files, proxy jump settings, and command preview.
 - 🔍 **Instant Fuzzy Search**: Multi-token search filters across names, aliases, and destinations.
 - ❓ **Interactive Help Modal**: Press <kbd>?</kbd> or <kbd>F1</kbd> for quick keybindings and shortcuts.
+- 📖 **Comprehensive Documentation**: Read the full [sshs User Manual](docs/user-manual.md) for detailed tutorials and configuration options.
 
 ## Requirements
 
