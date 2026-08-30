@@ -169,9 +169,9 @@ export SSHS_THEME="tokyonight"
 export SSHS_ASCII_ART="cyber"
 ```
 
-### ✨ Fancy ASCII Art Banners
+### ✨ Fancy ASCII Art Banners & Animations
 
-Add stylish ASCII art headers with smooth RGB gradients:
+Add stylish ASCII art headers with smooth animated RGB gradients:
 
 ```shell
 # Available styles: slant (default), cyber, standard, mini, off
@@ -182,6 +182,9 @@ sshs --ascii-art mini
 
 # Disable ASCII art banner for minimal view
 sshs --no-ascii-art
+
+# Disable animations (or toggle live with Ctrl+A)
+sshs --no-animate
 ```
 
 ### ⌨️ Keyboard Shortcuts & Controls
@@ -195,6 +198,7 @@ sshs --no-ascii-art
 | <kbd>Tab</kbd> | Open Host Details Inspector modal |
 | <kbd>Ctrl+T</kbd> / <kbd>F2</kbd> | Cycle visual theme |
 | <kbd>Ctrl+S</kbd> | Save current theme to `~/.config/sshs/config.toml` |
+| <kbd>Ctrl+A</kbd> | Toggle visual animations on / off |
 | <kbd>Ctrl+R</kbd> | Reload SSH configuration files |
 | <kbd>Ctrl+U</kbd> | Clear search query |
 | <kbd>?</kbd> / <kbd>F1</kbd> / <kbd>Ctrl+H</kbd> | Open Help modal |

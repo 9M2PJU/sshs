@@ -22,6 +22,9 @@ pub struct UserConfigFile {
 
     /// Custom SSH configuration file paths
     pub config: Option<Vec<String>>,
+
+    /// Enable visual animations (banner gradient waves, glowing cursors)
+    pub animate: Option<bool>,
 }
 
 /// Returns the path to the SSHS configuration file (`$XDG_CONFIG_HOME/sshs/config.toml` or `~/.config/sshs/config.toml`).
@@ -69,6 +72,25 @@ pub fn save_user_theme(theme_name: &str) -> anyhow::Result<()> {
 
     let mut config = load_user_config();
     config.theme = Some(theme_name.to_string());
+
+    let toml_str = toml::to_string_pretty(&config)?;
+    fs::write(&path, toml_str)?;
+
+    Ok(())
+}
+
+/// Saves or updates the animation preference in the configuration file.
+///
+/// # Errors
+/// Returns an error if directory creation or file writing fails.
+pub fn save_user_animate(animate: bool) -> anyhow::Result<()> {
+    let path = get_user_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut config = load_user_config();
+    config.animate = Some(animate);
 
     let toml_str = toml::to_string_pretty(&config)?;
     fs::write(&path, toml_str)?;

@@ -48,6 +48,10 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_ascii_art: bool,
 
+    /// Disable visual animations (gradient wave, spinners)
+    #[arg(long, default_value_t = false, env = "SSHS_NO_ANIMATE")]
+    no_animate: bool,
+
     /// Sort hosts by hostname (default)
     #[arg(long, default_value_t = true)]
     sort: bool,
@@ -94,6 +98,7 @@ fn main() -> Result<()> {
     let show_proxy_command = args.show_proxy_command || user_config.show_proxy_command.unwrap_or(false);
     let sort_by_name = (args.sort && !args.no_sort) || user_config.sort.unwrap_or(false);
     let sort_by_score = args.sort_fancy || user_config.sort_fancy.unwrap_or(false);
+    let animate = !args.no_animate && user_config.animate.unwrap_or(true);
 
     let config_paths = if args.config == ["/etc/ssh/ssh_config", "~/.ssh/config"] {
         user_config.config.unwrap_or(args.config)
@@ -110,6 +115,7 @@ fn main() -> Result<()> {
         sort_by_name,
         sort_by_score,
         show_proxy_command,
+        animate,
         command_template: args.template,
         command_template_on_session_start: args.on_session_start_template,
         command_template_on_session_end: args.on_session_end_template,

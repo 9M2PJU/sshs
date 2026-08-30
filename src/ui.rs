@@ -37,6 +37,7 @@ pub struct AppConfig {
     pub sort_by_name: bool,
     pub sort_by_score: bool,
     pub show_proxy_command: bool,
+    pub animate: bool,
 
     pub command_template: String,
     pub command_template_on_session_start: Option<String>,
@@ -59,6 +60,8 @@ pub struct App {
     show_details_modal: bool,
     show_help_modal: bool,
     status_message: Option<(String, Instant)>,
+    anim_tick: u64,
+    animate: bool,
 }
 
 #[derive(PartialEq)]
@@ -96,6 +99,8 @@ impl App {
             show_details_modal: false,
             show_help_modal: false,
             status_message: None,
+            anim_tick: 0,
+            animate: config.animate,
 
             hosts: Searchable::new(config.sort_by_score, hosts, &search_input),
         };
@@ -131,24 +136,32 @@ impl App {
         B: Backend + std::io::Write,
         <B as Backend>::Error: Send + Sync + 'static,
     {
+        let tick_rate = Duration::from_millis(50);
+
         loop {
             terminal.borrow_mut().draw(|f| ui(f, self))?;
 
-            let ev = event::read()?;
+            if crossterm::event::poll(tick_rate)? {
+                let ev = event::read()?;
 
-            if let Event::Key(key) = ev {
-                if key.kind == KeyEventKind::Press {
-                    let action = self.on_key_press(terminal, key)?;
-                    match action {
-                        AppKeyAction::Ok => continue,
-                        AppKeyAction::Stop => break,
-                        AppKeyAction::Continue => {}
+                if let Event::Key(key) = ev {
+                    if key.kind == KeyEventKind::Press {
+                        let action = self.on_key_press(terminal, key)?;
+                        match action {
+                            AppKeyAction::Ok => continue,
+                            AppKeyAction::Stop => break,
+                            AppKeyAction::Continue => {}
+                        }
+                    }
+
+                    if !self.show_help_modal && !self.show_details_modal {
+                        self.handle_search_event(&ev);
                     }
                 }
+            }
 
-                if !self.show_help_modal && !self.show_details_modal {
-                    self.handle_search_event(&ev);
-                }
+            if self.animate {
+                self.anim_tick = self.anim_tick.wrapping_add(1);
             }
         }
 
@@ -353,6 +366,13 @@ impl App {
             Char('r') => {
                 self.reload_hosts();
                 self.set_status_message("SSH config reloaded".to_string());
+                AppKeyAction::Ok
+            }
+            Char('a') => {
+                self.animate = !self.animate;
+                let state = if self.animate { "enabled" } else { "disabled" };
+                let _ = crate::config::save_user_animate(self.animate);
+                self.set_status_message(format!("Animations {state}"));
                 AppKeyAction::Ok
             }
             _ => AppKeyAction::Continue,
@@ -630,6 +650,8 @@ fn ui(f: &mut Frame, app: &mut App) {
                 &app.theme,
                 app.hosts.non_filtered_iter().count(),
                 app.hosts.len(),
+                app.anim_tick,
+                app.animate,
             );
             f.render_widget(Paragraph::new(mini).centered(), b_rect);
         }
@@ -662,8 +684,14 @@ fn render_full_banner(f: &mut Frame, app: &App, area: Rect) {
     ])
     .split(area);
 
-    // Render ASCII banner with gradient
-    let banner_lines = ascii_art::render_banner_lines(app.ascii_art_style, &app.theme);
+    // Render ASCII banner with smooth animated gradient
+    #[allow(clippy::cast_precision_loss)]
+    let phase = if app.animate {
+        (app.anim_tick as f32) * 0.02
+    } else {
+        0.0
+    };
+    let banner_lines = ascii_art::render_banner_lines(app.ascii_art_style, &app.theme, phase);
     let banner_widget = Paragraph::new(banner_lines);
     f.render_widget(banner_widget, chunks[0]);
 
@@ -717,8 +745,13 @@ fn render_searchbar(f: &mut Frame, app: &mut App, area: Rect) {
     let badge_text = format!(" [ {count}/{total} ] ");
 
     let search_line = if is_empty {
+        let icon = if app.animate {
+            ascii_art::get_spinner_frame(app.anim_tick)
+        } else {
+            "⚡"
+        };
         Line::from(vec![
-            Span::styled(" ⚡ ", Style::default().fg(app.theme.search_icon_fg).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {icon} "), Style::default().fg(app.theme.search_icon_fg).add_modifier(Modifier::BOLD)),
             Span::styled(
                 "Type to search hosts (e.g. prod, 192.168, user@)...",
                 Style::default().fg(app.theme.muted).add_modifier(Modifier::ITALIC),
@@ -750,7 +783,7 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
     app.page_step = max(usize::from(area.height.saturating_sub(3)), 1);
 
     if app.hosts.is_empty() {
-        let empty_lines = ascii_art::render_empty_state_lines(&app.theme, app.search.value());
+        let empty_lines = ascii_art::render_empty_state_lines(&app.theme, app.search.value(), app.anim_tick);
         let empty_widget = Paragraph::new(empty_lines).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1011,6 +1044,7 @@ fn render_help_modal(f: &mut Frame, app: &App) {
         ("Customization & Tools", &[
             ("Ctrl+T / F2", "Cycle visual theme dynamically"),
             ("Ctrl+S", "Save active theme to ~/.config/sshs/config.toml"),
+            ("Ctrl+A", "Toggle visual animations on / off"),
             ("Ctrl+R", "Reload SSH config files from disk"),
             ("Ctrl+U", "Clear the entire search query"),
             ("? / F1 / Ctrl+H", "Toggle this help dialog"),
@@ -1068,6 +1102,7 @@ mod tests {
             sort_by_name: false,
             sort_by_score: false,
             show_proxy_command: false,
+            animate: false,
             command_template: r#"ssh "{{{name}}}""#.to_string(),
             command_template_on_session_start: None,
             command_template_on_session_end: None,

@@ -41,6 +41,16 @@ impl AsciiArtStyle {
     }
 }
 
+// Braille Spinner Frames for smooth animations
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Returns the current spinner character frame
+#[must_use]
+pub fn get_spinner_frame(tick: u64) -> &'static str {
+    let idx = (tick as usize) % SPINNER_FRAMES.len();
+    SPINNER_FRAMES[idx]
+}
+
 // ASCII Banner Art Collections
 
 const SLANT_BANNER: &[&str] = &[
@@ -64,9 +74,9 @@ const STANDARD_BANNER: &[&str] = &[
     r" /__/\___/_||_/__/ ",
 ];
 
-/// Generates styled lines with a horizontal RGB gradient across the banner.
+/// Generates styled lines with a horizontal RGB gradient and optional wave animation across the banner.
 #[must_use]
-pub fn render_banner_lines(style: AsciiArtStyle, theme: &Theme) -> Vec<Line<'static>> {
+pub fn render_banner_lines(style: AsciiArtStyle, theme: &Theme, phase_offset: f32) -> Vec<Line<'static>> {
     let lines = match style {
         AsciiArtStyle::Slant => SLANT_BANNER,
         AsciiArtStyle::Cyber => CYBER_BANNER,
@@ -88,11 +98,14 @@ pub fn render_banner_lines(style: AsciiArtStyle, theme: &Theme) -> Vec<Line<'sta
 
             for (idx, ch) in line_str.chars().enumerate() {
                 #[allow(clippy::cast_precision_loss)]
-                let factor = if max_len > 1 {
+                let raw_factor = if max_len > 1 {
                     idx as f32 / max_len as f32
                 } else {
                     0.0
                 };
+
+                // Continuous sinusoidal shimmer wave
+                let factor = ((raw_factor + phase_offset) * 2.0 * std::f32::consts::PI).sin() * 0.5 + 0.5;
                 let color = interpolate_rgb(theme.banner_start, theme.banner_end, factor);
                 spans.push(Span::styled(
                     ch.to_string(),
@@ -112,10 +125,16 @@ pub fn render_banner_lines(style: AsciiArtStyle, theme: &Theme) -> Vec<Line<'sta
 
 /// Generates compact single-line badge banner
 #[must_use]
-pub fn render_mini_banner(theme: &Theme, total_hosts: usize, filtered_hosts: usize) -> Line<'static> {
+pub fn render_mini_banner(theme: &Theme, total_hosts: usize, filtered_hosts: usize, tick: u64, animate: bool) -> Line<'static> {
+    let spinner = if animate {
+        get_spinner_frame(tick)
+    } else {
+        "⚡"
+    };
+
     Line::from(vec![
         Span::styled(
-            " ⚡ SSHS ",
+            format!(" {spinner} SSHS "),
             Style::default()
                 .fg(theme.selected_fg)
                 .bg(theme.primary)
@@ -141,27 +160,26 @@ pub fn render_mini_banner(theme: &Theme, total_hosts: usize, filtered_hosts: usi
 
 /// ASCII Art for Empty Search State
 #[must_use]
-pub fn render_empty_state_lines(theme: &Theme, query: &str) -> Vec<Line<'static>> {
+pub fn render_empty_state_lines(theme: &Theme, query: &str, tick: u64) -> Vec<Line<'static>> {
+    let is_blinking = (tick / 20).is_multiple_of(6) && (tick % 20) < 3;
+    let eyes_line = if is_blinking {
+        r"     (-.-)"
+    } else {
+        r"     (o.o)"
+    };
+
     let ghost = [
         r"      .-.",
-        r"     (o.o)",
+        eyes_line,
         r"      |=|",
         r"     __|__",
         r"   //.=|=.\\",
-        r"  // .=|=. \\",
-        r"  \\ .=|=. //",
-        r"   \\(_=_)//",
-        r"    (:| |:)",
-        r"     || ||",
-        r"     () ()",
-        r"     || ||",
-        r"     =='=='",
     ];
 
     let mut result = Vec::new();
     result.push(Line::raw(""));
 
-    for line in &ghost[..5] {
+    for line in &ghost {
         result.push(
             Line::from(vec![
                 Span::styled(
@@ -257,20 +275,25 @@ mod tests {
 
     #[test]
     fn test_render_banner_lines() {
-        let lines = render_banner_lines(AsciiArtStyle::Slant, &THEME_CATPPUCCIN);
+        let lines = render_banner_lines(AsciiArtStyle::Slant, &THEME_CATPPUCCIN, 0.0);
         assert_eq!(lines.len(), 4);
 
-        let lines_cyber = render_banner_lines(AsciiArtStyle::Cyber, &THEME_CATPPUCCIN);
+        let lines_cyber = render_banner_lines(AsciiArtStyle::Cyber, &THEME_CATPPUCCIN, 0.5);
         assert_eq!(lines_cyber.len(), 5);
 
-        let lines_off = render_banner_lines(AsciiArtStyle::Off, &THEME_CATPPUCCIN);
+        let lines_off = render_banner_lines(AsciiArtStyle::Off, &THEME_CATPPUCCIN, 0.0);
         assert!(lines_off.is_empty());
     }
 
     #[test]
     fn test_render_empty_state() {
-        let lines = render_empty_state_lines(&THEME_CATPPUCCIN, "myserver");
+        let lines = render_empty_state_lines(&THEME_CATPPUCCIN, "myserver", 0);
         assert!(!lines.is_empty());
     }
-}
 
+    #[test]
+    fn test_spinner_frames() {
+        assert_eq!(get_spinner_frame(0), "⠋");
+        assert_eq!(get_spinner_frame(1), "⠙");
+    }
+}
