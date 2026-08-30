@@ -11,6 +11,7 @@ use std::{
     cell::RefCell,
     cmp::{max, min},
     io,
+    process::Command,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -45,6 +46,25 @@ pub struct AppConfig {
     pub exit_after_ssh_session_ends: bool,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct AddHostForm {
+    pub name: Input,
+    pub hostname: Input,
+    pub user: Input,
+    pub port: Input,
+    pub identity_file: Input,
+    pub proxy_jump: Input,
+    pub active_field: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct PostConnectPrompt {
+    pub host_name: String,
+    pub destination: String,
+    pub user: Option<String>,
+    pub port: Option<String>,
+}
+
 pub struct App {
     config: AppConfig,
 
@@ -59,12 +79,16 @@ pub struct App {
     ascii_art_style: AsciiArtStyle,
     show_details_modal: bool,
     show_help_modal: bool,
+    show_add_host_modal: bool,
+    show_delete_modal: Option<String>,
+    add_host_form: AddHostForm,
+    post_connect_prompt: Option<PostConnectPrompt>,
     status_message: Option<(String, Instant)>,
     anim_tick: u64,
     animate: bool,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq, Debug)]
 enum AppKeyAction {
     Ok,
     Stop,
@@ -98,6 +122,10 @@ impl App {
             ascii_art_style: ascii_style,
             show_details_modal: false,
             show_help_modal: false,
+            show_add_host_modal: false,
+            show_delete_modal: None,
+            add_host_form: AddHostForm::default(),
+            post_connect_prompt: None,
             status_message: None,
             anim_tick: 0,
             animate: config.animate,
@@ -146,7 +174,7 @@ impl App {
 
                 if let Event::Key(key) = ev {
                     if key.kind == KeyEventKind::Press {
-                        let action = self.on_key_press(terminal, key)?;
+                        let action = self.on_key_press(terminal, key, &ev)?;
                         match action {
                             AppKeyAction::Ok => continue,
                             AppKeyAction::Stop => break,
@@ -154,7 +182,12 @@ impl App {
                         }
                     }
 
-                    if !self.show_help_modal && !self.show_details_modal {
+                    if !self.show_help_modal
+                        && !self.show_details_modal
+                        && !self.show_add_host_modal
+                        && self.show_delete_modal.is_none()
+                        && self.post_connect_prompt.is_none()
+                    {
                         self.handle_search_event(&ev);
                     }
                 }
@@ -172,6 +205,7 @@ impl App {
         &mut self,
         terminal: &Rc<RefCell<Terminal<B>>>,
         key: KeyEvent,
+        ev: &Event,
     ) -> Result<AppKeyAction>
     where
         B: Backend + std::io::Write,
@@ -182,6 +216,113 @@ impl App {
 
         let is_ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
 
+        // 1. Delete Confirmation Modal
+        if let Some(host_name) = self.show_delete_modal.clone() {
+            match key.code {
+                Char('y' | 'Y') | Enter => {
+                    self.show_delete_modal = None;
+                    self.show_details_modal = false;
+                    match crate::config::remove_host_from_ssh_config(&host_name) {
+                        Ok(true) => {
+                            self.reload_hosts();
+                            self.set_status_message(format!("Removed host '{host_name}' from ~/.ssh/config!"));
+                        }
+                        Ok(false) => {
+                            self.set_status_message(format!("Host '{host_name}' not found in ~/.ssh/config"));
+                        }
+                        Err(e) => {
+                            self.set_status_message(format!("Error deleting host: {e}"));
+                        }
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+                Char('n' | 'N') | Esc => {
+                    self.show_delete_modal = None;
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => return Ok(AppKeyAction::Ok),
+            }
+        }
+
+        // 2. Post-Connect Passwordless Setup Modal
+        if let Some(prompt) = self.post_connect_prompt.clone() {
+            match key.code {
+                Char('y' | 'Y') => {
+                    self.post_connect_prompt = None;
+                    self.run_ssh_copy_id(terminal, &prompt)?;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Char('n' | 'N') | Esc | Enter => {
+                    self.post_connect_prompt = None;
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => return Ok(AppKeyAction::Ok),
+            }
+        }
+
+        // 3. Add New Host Modal
+        if self.show_add_host_modal {
+            match key.code {
+                Esc => {
+                    self.show_add_host_modal = false;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Tab | Down => {
+                    self.add_host_form.active_field = (self.add_host_form.active_field + 1) % 6;
+                    return Ok(AppKeyAction::Ok);
+                }
+                BackTab | Up => {
+                    self.add_host_form.active_field = (self.add_host_form.active_field + 5) % 6;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Enter => {
+                    let name = self.add_host_form.name.value().trim().to_string();
+                    let hostname = self.add_host_form.hostname.value().trim().to_string();
+                    if name.is_empty() || hostname.is_empty() {
+                        self.set_status_message("Host Alias and HostName (IP) are required!".to_string());
+                        return Ok(AppKeyAction::Ok);
+                    }
+
+                    let user_val = self.add_host_form.user.value().trim();
+                    let port_val = self.add_host_form.port.value().trim();
+                    let id_val = self.add_host_form.identity_file.value().trim();
+                    let pj_val = self.add_host_form.proxy_jump.value().trim();
+
+                    match crate::config::append_host_to_ssh_config(
+                        &name,
+                        &hostname,
+                        if user_val.is_empty() { None } else { Some(user_val) },
+                        if port_val.is_empty() { None } else { Some(port_val) },
+                        if id_val.is_empty() { None } else { Some(id_val) },
+                        if pj_val.is_empty() { None } else { Some(pj_val) },
+                    ) {
+                        Ok(_) => {
+                            self.reload_hosts();
+                            self.show_add_host_modal = false;
+                            self.set_status_message(format!("Added host '{name}' to ~/.ssh/config!"));
+                        }
+                        Err(e) => {
+                            self.set_status_message(format!("Error saving host: {e}"));
+                        }
+                    }
+                    return Ok(AppKeyAction::Ok);
+                }
+                _ => {
+                    let active_input = match self.add_host_form.active_field {
+                        0 => &mut self.add_host_form.name,
+                        1 => &mut self.add_host_form.hostname,
+                        2 => &mut self.add_host_form.user,
+                        3 => &mut self.add_host_form.port,
+                        4 => &mut self.add_host_form.identity_file,
+                        _ => &mut self.add_host_form.proxy_jump,
+                    };
+                    active_input.handle_event(ev);
+                    return Ok(AppKeyAction::Ok);
+                }
+            }
+        }
+
+        // 4. Ctrl Key Shortcuts
         if is_ctrl_pressed {
             let action = self.on_key_press_ctrl(key);
             if action != AppKeyAction::Continue {
@@ -189,10 +330,10 @@ impl App {
             }
         }
 
-        // Handle active modals first
+        // 5. Help Modal
         if self.show_help_modal {
             match key.code {
-                Esc | Char('?' | 'q') | Enter => {
+                Esc | Char('q') | Enter => {
                     self.show_help_modal = false;
                     return Ok(AppKeyAction::Ok);
                 }
@@ -200,10 +341,18 @@ impl App {
             }
         }
 
+        // 6. Details Inspector Modal
         if self.show_details_modal {
             match key.code {
                 Esc | Tab | Char('q') => {
                     self.show_details_modal = false;
+                    return Ok(AppKeyAction::Ok);
+                }
+                Char('d') | Delete => {
+                    let selected = self.table_state.selected().unwrap_or(0);
+                    if selected < self.hosts.len() {
+                        self.show_delete_modal = Some(self.hosts[selected].name.clone());
+                    }
                     return Ok(AppKeyAction::Ok);
                 }
                 Down => {
@@ -237,6 +386,7 @@ impl App {
             }
         }
 
+        // 7. Normal Table View Controls
         match key.code {
             Esc => {
                 if !self.search.value().is_empty() {
@@ -250,6 +400,13 @@ impl App {
             Tab => {
                 if !self.hosts.is_empty() {
                     self.show_details_modal = true;
+                }
+                return Ok(AppKeyAction::Ok);
+            }
+            Delete => {
+                let selected = self.table_state.selected().unwrap_or(0);
+                if selected < self.hosts.len() {
+                    self.show_delete_modal = Some(self.hosts[selected].name.clone());
                 }
                 return Ok(AppKeyAction::Ok);
             }
@@ -304,7 +461,7 @@ impl App {
             return Ok(AppKeyAction::Ok);
         }
 
-        let host: &ssh::Host = &self.hosts[selected];
+        let host: ssh::Host = self.hosts[selected].clone();
 
         restore_terminal(terminal).expect("Failed to restore terminal");
 
@@ -312,7 +469,7 @@ impl App {
             host.spawn_command_template(template)?;
         }
 
-        host.spawn_command_template(&self.config.command_template)?;
+        let cmd_status = host.spawn_command_template(&self.config.command_template);
 
         if let Some(template) = &self.config.command_template_on_session_end {
             host.spawn_command_template(template)?;
@@ -324,7 +481,67 @@ impl App {
             return Ok(AppKeyAction::Stop);
         }
 
+        // Check if connection succeeded, prompt user if they want to setup passwordless SSH key
+        if cmd_status.is_ok() {
+            self.post_connect_prompt = Some(PostConnectPrompt {
+                host_name: host.name.clone(),
+                destination: host.destination.clone(),
+                user: host.user.clone(),
+                port: host.port.clone(),
+            });
+        }
+
         Ok(AppKeyAction::Ok)
+    }
+
+    fn run_ssh_copy_id<B>(
+        &mut self,
+        terminal: &Rc<RefCell<Terminal<B>>>,
+        prompt: &PostConnectPrompt,
+    ) -> Result<()>
+    where
+        B: Backend + std::io::Write,
+        <B as Backend>::Error: Send + Sync + 'static,
+    {
+        let target = if let Some(u) = &prompt.user {
+            if !u.is_empty() {
+                format!("{u}@{}", prompt.destination)
+            } else {
+                prompt.destination.clone()
+            }
+        } else {
+            prompt.destination.clone()
+        };
+
+        restore_terminal(terminal).expect("Failed to restore terminal");
+
+        println!("\n🔑 Setting up passwordless login with ssh-copy-id to '{target}'...\n");
+
+        let mut cmd = Command::new("ssh-copy-id");
+        if let Some(port) = &prompt.port {
+            if !port.is_empty() && port != "22" {
+                cmd.arg("-p").arg(port);
+            }
+        }
+        cmd.arg(&target);
+
+        let status = cmd.status();
+
+        setup_terminal(terminal).expect("Failed to setup terminal");
+
+        match status {
+            Ok(s) if s.success() => {
+                self.set_status_message("SSH public key successfully installed!".to_string());
+            }
+            Ok(_) => {
+                self.set_status_message("ssh-copy-id exited with non-zero status".to_string());
+            }
+            Err(e) => {
+                self.set_status_message(format!("Failed to run ssh-copy-id: {e}"));
+            }
+        }
+
+        Ok(())
     }
 
     fn on_key_press_ctrl(&mut self, key: KeyEvent) -> AppKeyAction {
@@ -333,6 +550,21 @@ impl App {
 
         match key.code {
             Char('c') => AppKeyAction::Stop,
+            Char('n') => {
+                self.show_add_host_modal = true;
+                self.add_host_form = AddHostForm {
+                    port: "22".into(),
+                    ..Default::default()
+                };
+                AppKeyAction::Ok
+            }
+            Char('d') => {
+                let selected = self.table_state.selected().unwrap_or(0);
+                if selected < self.hosts.len() {
+                    self.show_delete_modal = Some(self.hosts[selected].name.clone());
+                }
+                AppKeyAction::Ok
+            }
             Char('t') => {
                 self.cycle_theme();
                 AppKeyAction::Ok
@@ -345,7 +577,7 @@ impl App {
                 }
                 AppKeyAction::Ok
             }
-            Char('h') => {
+            Char('?' | '/' | 'h') => {
                 self.show_help_modal = !self.show_help_modal;
                 AppKeyAction::Ok
             }
@@ -355,7 +587,7 @@ impl App {
                 self.table_state.select(Some(0));
                 AppKeyAction::Ok
             }
-            Char('j' | 'n') => {
+            Char('j') => {
                 self.next();
                 AppKeyAction::Ok
             }
@@ -395,34 +627,19 @@ impl App {
         let search_value_before = self.search.value().to_string();
         self.search.handle_event(ev);
 
-        if self.search.value() == search_value_before {
-            let selected = self.table_state.selected().unwrap_or(0);
-            if selected >= self.hosts.len() {
-                self.table_state.select(Some(match self.hosts.len() {
-                    0 => 0,
-                    _ => self.hosts.len() - 1,
-                }));
-            }
-        } else {
-            self.hosts.search(self.search.value());
-            self.table_state.select(Some(0));
+        let search_value = self.search.value();
+        if search_value == search_value_before {
+            return;
         }
-    }
 
-    /// Re-reads the configuration files. Keeps the current list when a file
-    /// no longer parses.
-    fn reload_hosts(&mut self) {
-        if let Ok(hosts) = load_hosts(&self.config) {
-            self.hosts = Searchable::new(self.config.sort_by_score, hosts, self.search.value());
-            self.table_state.select(Some(0));
-            self.calculate_table_columns_constraints();
-        }
+        self.hosts.search(search_value);
+        self.table_state.select(Some(0));
     }
 
     fn next(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
-                if self.hosts.is_empty() || i >= self.hosts.len() - 1 {
+                if i >= self.hosts.len().saturating_sub(1) {
                     0
                 } else {
                     i + 1
@@ -436,10 +653,8 @@ impl App {
     fn previous(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
-                if self.hosts.is_empty() {
-                    0
-                } else if i == 0 {
-                    self.hosts.len() - 1
+                if i == 0 {
+                    self.hosts.len().saturating_sub(1)
                 } else {
                     i - 1
                 }
@@ -449,87 +664,73 @@ impl App {
         self.table_state.select(Some(i));
     }
 
+    fn reload_hosts(&mut self) {
+        let selected = self.table_state.selected().unwrap_or(0);
+        let selected_name = if selected < self.hosts.len() {
+            Some(self.hosts[selected].name.clone())
+        } else {
+            None
+        };
+
+        let Ok(hosts) = load_hosts(&self.config) else {
+            return;
+        };
+
+        self.hosts = Searchable::new(self.config.sort_by_score, hosts, self.search.value());
+
+        let next_selected = selected_name
+            .and_then(|name| self.hosts.iter().position(|h| h.name == name))
+            .unwrap_or(0);
+        self.table_state.select(Some(next_selected));
+
+        self.calculate_table_columns_constraints();
+    }
+
     fn calculate_table_columns_constraints(&mut self) {
-        let mut lengths = Vec::new();
+        let mut column_widths = [
+            "Host".width(),
+            "Aliases".width(),
+            "User".width(),
+            "Destination".width(),
+            "Port".width(),
+            "Proxy".width(),
+        ];
 
-        let name_len = self
-            .hosts
-            .non_filtered_iter()
-            .map(|d| d.name.as_str())
-            .map(UnicodeWidthStr::width)
-            .max()
-            .unwrap_or(0);
-        // +2 for the "● " bullet glyph prefix
-        lengths.push(name_len + 2);
-
-        let aliases_len = self
-            .hosts
-            .non_filtered_iter()
-            .map(|d| d.aliases.as_str())
-            .map(UnicodeWidthStr::width)
-            .max()
-            .unwrap_or(0);
-        lengths.push(aliases_len);
-
-        let user_len = self
-            .hosts
-            .non_filtered_iter()
-            .map(|d| match &d.user {
-                Some(user) => user.as_str(),
-                None => "",
-            })
-            .map(UnicodeWidthStr::width)
-            .max()
-            .unwrap_or(0);
-        lengths.push(user_len);
-
-        let destination_len = self
-            .hosts
-            .non_filtered_iter()
-            .map(|d| d.destination.as_str())
-            .map(UnicodeWidthStr::width)
-            .max()
-            .unwrap_or(0);
-        lengths.push(destination_len);
-
-        let port_len = self
-            .hosts
-            .non_filtered_iter()
-            .map(|d| match &d.port {
-                Some(port) => port.as_str(),
-                None => "",
-            })
-            .map(UnicodeWidthStr::width)
-            .max()
-            .unwrap_or(0);
-        lengths.push(port_len);
-
-        if self.config.show_proxy_command {
-            let proxy_len = self
-                .hosts
-                .non_filtered_iter()
-                .map(|d| match &d.proxy_command {
-                    Some(proxy) => proxy.as_str(),
-                    None => "",
-                })
-                .map(UnicodeWidthStr::width)
-                .max()
-                .unwrap_or(0);
-            lengths.push(proxy_len);
+        for host in self.hosts.non_filtered_iter() {
+            column_widths[0] = max(column_widths[0], host.name.width());
+            column_widths[1] = max(column_widths[1], host.aliases.width());
+            column_widths[2] = max(
+                column_widths[2],
+                host.user.as_deref().map_or(0, UnicodeWidthStr::width),
+            );
+            column_widths[3] = max(column_widths[3], host.destination.width());
+            column_widths[4] = max(
+                column_widths[4],
+                host.port.as_deref().map_or(0, UnicodeWidthStr::width),
+            );
+            column_widths[5] = max(
+                column_widths[5],
+                host.proxy_command
+                    .as_deref()
+                    .map_or(0, UnicodeWidthStr::width),
+            );
         }
 
-        let mut new_constraints = vec![
-            // +1 for padding
-            Constraint::Length(u16::try_from(lengths[0]).unwrap_or_default() + 1),
+        let mut constraints = vec![
+            Constraint::Length(u16::try_from(column_widths[0]).unwrap_or_default() + 2), // +2 for bullet point
+            Constraint::Length(u16::try_from(column_widths[1]).unwrap_or_default()),
+            Constraint::Length(u16::try_from(column_widths[2]).unwrap_or_default()),
+            Constraint::Length(u16::try_from(column_widths[3]).unwrap_or_default()),
+            Constraint::Length(u16::try_from(column_widths[4]).unwrap_or_default()),
         ];
-        new_constraints.extend(
-            lengths
-                .iter()
-                .skip(1)
-                .map(|len| Constraint::Min(u16::try_from(*len).unwrap_or_default() + 1)),
-        );
 
-        self.table_columns_constraints = new_constraints;
+        if self.config.show_proxy_command {
+            constraints.push(Constraint::Length(
+                u16::try_from(column_widths[5]).unwrap_or_default(),
+            ));
+        }
+
+        self.table_columns_constraints = constraints;
     }
 }
 
@@ -561,7 +762,7 @@ fn load_hosts(config: &AppConfig) -> Result<Vec<ssh::Host>> {
     }
 
     if config.sort_by_name {
-        hosts.sort_by_key(|host| host.name.to_lowercase());
+        hosts.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
     Ok(hosts)
@@ -572,11 +773,10 @@ where
     B: Backend + std::io::Write,
     <B as Backend>::Error: Send + Sync + 'static,
 {
-    let mut terminal = terminal.borrow_mut();
-
-    // setup terminal
     enable_raw_mode()?;
-    execute!(terminal.backend_mut(), Hide, EnterAlternateScreen)?;
+    execute!(io::stdout(), EnterAlternateScreen, Hide)?;
+    terminal.borrow_mut().clear()?;
+    terminal.borrow_mut().hide_cursor()?;
 
     Ok(())
 }
@@ -586,37 +786,28 @@ where
     B: Backend + std::io::Write,
     <B as Backend>::Error: Send + Sync + 'static,
 {
-    let mut terminal = terminal.borrow_mut();
-    terminal.clear()?;
-
-    // restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), Show, LeaveAlternateScreen)?;
+    execute!(io::stdout(), LeaveAlternateScreen, Show)?;
+    terminal.borrow_mut().show_cursor()?;
 
     Ok(())
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    let total_height = f.area().height;
-    let total_width = f.area().width;
+    let size = f.area();
 
-    let show_full_banner = !app.config.no_ascii_art
-        && app.ascii_art_style != AsciiArtStyle::Off
-        && app.ascii_art_style != AsciiArtStyle::Mini
-        && total_height >= 22
-        && total_width >= 60;
-
-    let show_mini_banner = !show_full_banner
-        && !app.config.no_ascii_art
-        && app.ascii_art_style != AsciiArtStyle::Off
-        && total_height >= 14;
-
-    let banner_height = if show_full_banner {
-        app.ascii_art_style.required_height()
-    } else if show_mini_banner {
-        1
+    // Determine layout based on terminal height
+    let (show_full_banner, show_mini_banner, banner_height) = if size.height >= 24 {
+        let req_h = app.ascii_art_style.required_height();
+        if req_h > 0 {
+            (true, false, req_h)
+        } else {
+            (false, false, 0)
+        }
+    } else if size.height >= 14 && app.ascii_art_style != AsciiArtStyle::Off {
+        (false, true, 1)
     } else {
-        0
+        (false, false, 0)
     };
 
     let constraints = if banner_height > 0 {
@@ -661,19 +852,23 @@ fn ui(f: &mut Frame, app: &mut App) {
     render_table(f, app, table_rect);
     render_footer(f, app, footer_rect);
 
-    // Set cursor in search bar
-    if !app.show_help_modal && !app.show_details_modal {
+    // Render modals if active
+    if let Some(del_name) = &app.show_delete_modal.clone() {
+        render_delete_modal(f, app, del_name);
+    } else if app.show_add_host_modal {
+        render_add_host_modal(f, app);
+    } else if let Some(prompt) = &app.post_connect_prompt {
+        render_post_connect_modal(f, app, prompt);
+    } else if app.show_details_modal {
+        render_details_modal(f, app);
+    } else if app.show_help_modal {
+        render_help_modal(f, app);
+    } else {
+        // Set cursor in search bar
         let mut cursor_position = search_rect.as_position();
         cursor_position.x += u16::try_from(app.search.cursor()).unwrap_or_default() + 5;
         cursor_position.y += 1;
         f.set_cursor_position(cursor_position);
-    }
-
-    // Render modals if active
-    if app.show_details_modal {
-        render_details_modal(f, app);
-    } else if app.show_help_modal {
-        render_help_modal(f, app);
     }
 }
 
@@ -894,11 +1089,13 @@ fn render_footer(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(" Connect  ", app.theme.key_desc_style()),
             Span::styled(" Tab ", app.theme.key_badge_style()),
             Span::styled(" Details  ", app.theme.key_desc_style()),
+            Span::styled(" ^N ", app.theme.key_badge_style()),
+            Span::styled(" Add  ", app.theme.key_desc_style()),
+            Span::styled(" ^D ", app.theme.key_badge_style()),
+            Span::styled(" Delete  ", app.theme.key_desc_style()),
             Span::styled(" ^T ", app.theme.key_badge_style()),
             Span::styled(" Theme  ", app.theme.key_desc_style()),
-            Span::styled(" ^R ", app.theme.key_badge_style()),
-            Span::styled(" Reload  ", app.theme.key_desc_style()),
-            Span::styled(" ? ", app.theme.key_badge_style()),
+            Span::styled(" ^? ", app.theme.key_badge_style()),
             Span::styled(" Help  ", app.theme.key_desc_style()),
             Span::styled(" Esc ", app.theme.key_badge_style()),
             Span::styled(" Quit ", app.theme.key_desc_style()),
@@ -928,6 +1125,193 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         Constraint::Percentage((100 - percent_x) / 2),
     ])
     .split(popup_layout[1])[1]
+}
+
+fn render_delete_modal(f: &mut Frame, app: &App, host_name: &str) {
+    let area = centered_rect(58, 30, f.area());
+    f.render_widget(Clear, area);
+
+    let lines = vec![
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("  Are you sure you want to delete SSH host ", Style::default().fg(app.theme.header_fg)),
+            Span::styled(format!("'{host_name}'"), Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled("?", Style::default().fg(app.theme.header_fg)),
+        ]).centered(),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("  This will remove its configuration stanza from ~/.ssh/config.", Style::default().fg(app.theme.muted)),
+        ]).centered(),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(" [ y / Enter ] ", Style::default().fg(app.theme.selected_fg).bg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled(" Yes, Delete Host    ", app.theme.key_desc_style()),
+            Span::styled(" [ n / Esc ] ", app.theme.key_badge_style()),
+            Span::styled(" Cancel", app.theme.key_desc_style()),
+        ]).centered(),
+    ];
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.active_border_style())
+        .title(Line::from(Span::styled(
+            " 🗑 Delete SSH Host Profile ",
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
+        )));
+
+    let widget = Paragraph::new(lines).block(modal_block);
+    f.render_widget(widget, area);
+}
+
+fn render_add_host_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(65, 70, f.area());
+    f.render_widget(Clear, area);
+
+    let fields = [
+        ("Host Alias / Name (Required)", &app.add_host_form.name, "e.g. web-prod, vps-us"),
+        ("HostName / IP (Required)", &app.add_host_form.hostname, "e.g. 192.168.1.100, server.com"),
+        ("User (Optional)", &app.add_host_form.user, "e.g. root, ubuntu, debian"),
+        ("Port (Optional)", &app.add_host_form.port, "default 22"),
+        ("Identity File (Optional)", &app.add_host_form.identity_file, "e.g. ~/.ssh/id_ed25519"),
+        ("Proxy Jump (Optional)", &app.add_host_form.proxy_jump, "e.g. bastion.example.com"),
+    ];
+
+    let mut lines = Vec::new();
+    lines.push(Line::raw(""));
+
+    for (idx, (label, input, placeholder)) in fields.iter().enumerate() {
+        let is_active = idx == app.add_host_form.active_field;
+        let prefix = if is_active { " ❯ " } else { "   " };
+        let label_style = if is_active {
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.muted)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(prefix, label_style),
+            Span::styled(*label, label_style),
+        ]));
+
+        let val = input.value();
+        let input_line = if val.is_empty() {
+            if is_active {
+                Line::from(vec![
+                    Span::styled("   [ ", Style::default().fg(app.theme.border_active)),
+                    Span::styled(*placeholder, Style::default().fg(app.theme.muted).add_modifier(Modifier::ITALIC)),
+                    Span::styled(" ]", Style::default().fg(app.theme.border_active)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("   [ ", Style::default().fg(app.theme.border)),
+                    Span::styled(*placeholder, Style::default().fg(app.theme.muted)),
+                    Span::styled(" ]", Style::default().fg(app.theme.border)),
+                ])
+            }
+        } else {
+            let val_style = if is_active {
+                Style::default().fg(app.theme.header_fg).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.header_fg)
+            };
+            let bracket_style = if is_active {
+                Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.border)
+            };
+
+            Line::from(vec![
+                Span::styled("   [ ", bracket_style),
+                Span::styled(val, val_style),
+                Span::styled(" ]", bracket_style),
+            ])
+        };
+
+        lines.push(input_line);
+        lines.push(Line::raw(""));
+    }
+
+    lines.push(
+        Line::from(vec![
+            Span::styled(" [ Tab/↓ ] ", app.theme.key_badge_style()),
+            Span::styled(" Next   ", app.theme.key_desc_style()),
+            Span::styled(" [ Shift+Tab/↑ ] ", app.theme.key_badge_style()),
+            Span::styled(" Prev   ", app.theme.key_desc_style()),
+            Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
+            Span::styled(" Save Host   ", app.theme.key_desc_style()),
+            Span::styled(" [ Esc ] ", app.theme.key_badge_style()),
+            Span::styled(" Cancel", app.theme.key_desc_style()),
+        ])
+        .centered(),
+    );
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.active_border_style())
+        .title(Line::from(Span::styled(
+            " ➕ Add New SSH Host ",
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
+        )));
+
+    let widget = Paragraph::new(lines).block(modal_block);
+    f.render_widget(widget, area);
+}
+
+fn render_post_connect_modal(f: &mut Frame, app: &App, prompt: &PostConnectPrompt) {
+    let area = centered_rect(60, 32, f.area());
+    f.render_widget(Clear, area);
+
+    let target = if let Some(u) = &prompt.user {
+        if !u.is_empty() {
+            format!("{u}@{}", prompt.destination)
+        } else {
+            prompt.destination.clone()
+        }
+    } else {
+        prompt.destination.clone()
+    };
+
+    let lines = vec![
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("  Session with '", Style::default().fg(app.theme.header_fg)),
+            Span::styled(&prompt.host_name, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled("' ended successfully.", Style::default().fg(app.theme.header_fg)),
+        ]).centered(),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("  Would you like to install your SSH public key using ", Style::default().fg(app.theme.muted)),
+            Span::styled("ssh-copy-id", Style::default().fg(app.theme.accent).add_modifier(Modifier::BOLD)),
+        ]).centered(),
+        Line::from(vec![
+            Span::styled("  to enable seamless passwordless login in the future?", Style::default().fg(app.theme.muted)),
+        ]).centered(),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(format!("    ❯ ssh-copy-id {target}"), Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+        ]).centered(),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(" [ y ] ", Style::default().fg(app.theme.selected_fg).bg(app.theme.user).add_modifier(Modifier::BOLD)),
+            Span::styled(" Yes, Run ssh-copy-id    ", app.theme.key_desc_style()),
+            Span::styled(" [ n / Esc ] ", app.theme.key_badge_style()),
+            Span::styled(" Skip", app.theme.key_desc_style()),
+        ]).centered(),
+    ];
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.active_border_style())
+        .title(Line::from(Span::styled(
+            " 🔑 Passwordless Key Setup ",
+            Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD),
+        )));
+
+    let widget = Paragraph::new(lines).block(modal_block);
+    f.render_widget(widget, area);
 }
 
 fn render_details_modal(f: &mut Frame, app: &App) {
@@ -1001,8 +1385,10 @@ fn render_details_modal(f: &mut Frame, app: &App) {
         Line::from(vec![
             Span::styled(" [ Enter ] ", app.theme.key_badge_style()),
             Span::styled(" Connect   ", app.theme.key_desc_style()),
+            Span::styled(" [ Ctrl+D / d ] ", app.theme.key_badge_style()),
+            Span::styled(" Delete Host   ", app.theme.key_desc_style()),
             Span::styled(" [ ↑/↓ ] ", app.theme.key_badge_style()),
-            Span::styled(" Next/Prev Host   ", app.theme.key_desc_style()),
+            Span::styled(" Navigate   ", app.theme.key_desc_style()),
             Span::styled(" [ Esc / Tab ] ", app.theme.key_badge_style()),
             Span::styled(" Close Inspector", app.theme.key_desc_style()),
         ])
@@ -1023,7 +1409,7 @@ fn render_details_modal(f: &mut Frame, app: &App) {
 }
 
 fn render_help_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(72, 80, f.area());
+    let area = centered_rect(72, 85, f.area());
     f.render_widget(Clear, area);
 
     let mut lines = ascii_art::render_help_header(&app.theme);
@@ -1038,6 +1424,8 @@ fn render_help_modal(f: &mut Frame, app: &App) {
         ("Actions", &[
             ("Enter", "Connect to selected SSH host"),
             ("Tab", "Open Host Inspector & Details modal"),
+            ("Ctrl+N", "Add a new SSH host to ~/.ssh/config"),
+            ("Ctrl+D / Delete", "Delete selected host from ~/.ssh/config"),
             ("Type text", "Fuzzy search and filter hosts"),
             ("Esc", "Clear search query or quit"),
         ]),
@@ -1047,7 +1435,7 @@ fn render_help_modal(f: &mut Frame, app: &App) {
             ("Ctrl+A", "Toggle visual animations on / off"),
             ("Ctrl+R", "Reload SSH config files from disk"),
             ("Ctrl+U", "Clear the entire search query"),
-            ("? / F1 / Ctrl+H", "Toggle this help dialog"),
+            ("Ctrl+? / Ctrl+H / F1", "Toggle this help dialog"),
         ]),
     ];
 
@@ -1058,7 +1446,7 @@ fn render_help_modal(f: &mut Frame, app: &App) {
 
         for (key, desc) in *items {
             lines.push(Line::from(vec![
-                Span::styled(format!("    {key:<18}"), app.theme.key_badge_style()),
+                Span::styled(format!("    {key:<22}"), app.theme.key_badge_style()),
                 Span::styled(format!(" {desc}"), Style::default().fg(app.theme.header_fg)),
             ]));
         }
@@ -1067,7 +1455,7 @@ fn render_help_modal(f: &mut Frame, app: &App) {
 
     lines.push(
         Line::from(vec![
-            Span::styled(" [ Esc / ? ] ", app.theme.key_badge_style()),
+            Span::styled(" [ Esc / Enter ] ", app.theme.key_badge_style()),
             Span::styled(" Close Help ", app.theme.key_desc_style()),
         ])
         .centered(),
@@ -1131,7 +1519,9 @@ mod tests {
             "Host first\n  Hostname first.example.com\nHost second\n  Hostname second.example.com\n",
         )
         .unwrap();
+
         app.reload_hosts();
+
         std::fs::remove_file(&path).ok();
 
         assert_eq!(app.hosts.len(), 2);
@@ -1149,9 +1539,6 @@ mod tests {
         ));
     }
 
-    /// Regression test for <https://github.com/quantumsheep/sshs/issues/120>:
-    /// a missing SSH config file used to surface a raw `Io(Os { .. })` debug
-    /// error; it should now explain what's missing and how to fix it.
     #[test]
     fn test_missing_config_file_gives_actionable_error() {
         let mut config = test_config();
@@ -1172,18 +1559,13 @@ mod tests {
         );
     }
 
-    /// Regression test for <https://github.com/quantumsheep/sshs/issues/154>:
-    /// typing a search query used to keep the previously selected row index,
-    /// which could point at an unrelated host once the list was refiltered.
     #[test]
     fn test_search_resets_selection_to_top_match() {
         let config = test_config();
         let mut app = App::new(&config).unwrap();
 
-        // Sanity check: all 4 hosts are listed in file order before searching.
         assert_eq!(app.hosts.len(), 4);
 
-        // Select the 2nd row ("other"), which won't match the search below.
         app.next();
         assert_eq!(app.table_state.selected(), Some(1));
 
@@ -1193,9 +1575,6 @@ mod tests {
 
         assert_eq!(app.hosts.len(), 3);
         assert_eq!(app.hosts.iter().next().unwrap().name, "match1");
-
-        // The stale index (1) would previously stay selected, highlighting
-        // "match2" instead of resetting to the top match "match1".
         assert_eq!(app.table_state.selected(), Some(0));
     }
 
@@ -1206,5 +1585,29 @@ mod tests {
         let initial_theme = app.theme.name;
         app.cycle_theme();
         assert_ne!(app.theme.name, initial_theme);
+    }
+
+    #[test]
+    fn test_add_host_modal_toggle() {
+        let config = test_config();
+        let mut app = App::new(&config).unwrap();
+        assert!(!app.show_add_host_modal);
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+        let action = app.on_key_press_ctrl(key);
+        assert_eq!(action, AppKeyAction::Ok);
+        assert!(app.show_add_host_modal);
+    }
+
+    #[test]
+    fn test_delete_host_modal_toggle() {
+        let config = test_config();
+        let mut app = App::new(&config).unwrap();
+        assert!(app.show_delete_modal.is_none());
+
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+        let action = app.on_key_press_ctrl(key);
+        assert_eq!(action, AppKeyAction::Ok);
+        assert_eq!(app.show_delete_modal.as_deref(), Some("match1"));
     }
 }

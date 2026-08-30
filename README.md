@@ -196,12 +196,14 @@ sshs --no-animate
 | <kbd>Home</kbd> / <kbd>End</kbd> | Jump to top / bottom |
 | <kbd>Enter</kbd> | Connect to selected SSH host |
 | <kbd>Tab</kbd> | Open Host Details Inspector modal |
+| <kbd>Ctrl+N</kbd> | Add new SSH host to `~/.ssh/config` modal |
+| <kbd>Ctrl+D</kbd> / <kbd>Delete</kbd> | Delete selected SSH host profile from `~/.ssh/config` |
 | <kbd>Ctrl+T</kbd> / <kbd>F2</kbd> | Cycle visual theme |
 | <kbd>Ctrl+S</kbd> | Save current theme to `~/.config/sshs/config.toml` |
 | <kbd>Ctrl+A</kbd> | Toggle visual animations on / off |
 | <kbd>Ctrl+R</kbd> | Reload SSH configuration files |
 | <kbd>Ctrl+U</kbd> | Clear search query |
-| <kbd>?</kbd> / <kbd>F1</kbd> / <kbd>Ctrl+H</kbd> | Open Help modal |
+| <kbd>Ctrl+?</kbd> / <kbd>Ctrl+H</kbd> / <kbd>F1</kbd> | Open Help modal |
 | <kbd>Esc</kbd> | Clear search or quit |
 
 ## Troubleshooting
