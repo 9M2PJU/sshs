@@ -1,0 +1,31 @@
+name: sshs
+base: core24
+adopt-info: sshs
+summary: Terminal user interface for SSH
+description: |
+  sshs is a terminal user interface for SSH with themes, ASCII banners,
+  SSHS Explorer (remote file browser), and networking hub.
+
+website: https://github.com/9M2PJU/sshs
+contact: 9m2pju@gmail.com
+issues: https://github.com/9M2PJU/sshs/issues
+source-code: https://github.com/9M2PJU/sshs
+license: MIT
+
+grade: stable
+confinement: classic
+
+apps:
+  sshs:
+    command: bin/sshs
+
+parts:
+  sshs:
+    plugin: rust
+    source: .
+    rust-channel: stable
+    override-pull: |
+      craftctl default
+      version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+      craftctl set version="$version"
+

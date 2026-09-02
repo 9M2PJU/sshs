@@ -18,6 +18,16 @@
 result
 
 
+# Snapcraft
+*.snap
+*.snap.sha256
+snapcraft.login
+.snapcraft/
+parts/
+stage/
+prime/
+
 # Added by cargo
 
 /target
+

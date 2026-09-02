@@ -62,6 +62,15 @@ curl -LO https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linu
 sudo apt install ./sshs-linux-amd64.deb
 ```
 
+### Snap (Snapcraft)
+
+`sshs` is available as a classic snap on the [Snap Store](https://snapcraft.io/sshs):
+
+```shell
+sudo snap install sshs --classic
+```
+
+
 ### NetBSD
 
 `sshs` is available on NetBSD from the [official repository](https://pkgsrc.se/security/sshs).

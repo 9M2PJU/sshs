@@ -243,3 +243,51 @@ jobs:
           asset_name: sshs-linux-${{ matrix.target.rpm-arch }}.rpm.sha256
           file: target/generate-rpm/sshs-${{ matrix.target.rpm-arch }}.rpm.sha256
 
+  snap:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - arch: "amd64"
+            runs-on: ubuntu-24.04
+          - arch: "arm64"
+            runs-on: ubuntu-24.04-arm
+    needs: build
+    runs-on: ${{ matrix.target.runs-on }}
+    name: Build and publish Snap (${{ matrix.target.arch }})
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Snap
+        uses: snapcore/action-build@v1
+        id: snapcraft
+
+      - name: Upload Snap to GitHub Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-linux-${{ matrix.target.arch }}.snap
+          file: ${{ steps.snapcraft.outputs.snap }}
+
+      - name: Compute snap checksum
+        run: shasum --algorithm 256 "${{ steps.snapcraft.outputs.snap }}" > "${{ steps.snapcraft.outputs.snap }}.sha256"
+
+      - uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          asset_name: sshs-linux-${{ matrix.target.arch }}.snap.sha256
+          file: ${{ steps.snapcraft.outputs.snap }}.sha256
+
+      - name: Publish to Snap Store
+        if: ${{ env.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snapcraft.outputs.snap }}
+          release: candidate
+
